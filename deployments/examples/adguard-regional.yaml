@@ -1,0 +1,35 @@
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: RegionalWorkload
+metadata:
+  name: adguard-emergency
+  namespace: adguard
+spec:
+  workloadRef:
+    kind: Deployment
+    name: adguard-home
+  placementConstraints:
+    # Emergency profile - can run on any available node
+    regionPreference:
+    - hanoi
+    - cloud
+    
+    # Accept tertiary tier for emergency fallback
+    tierPreference:
+    - primary
+    - secondary
+    - tertiary
+    
+    # No strict requirements for emergency mode
+    requireLabels: {}
+    
+    # Can even run on pi400 if needed
+    avoidNodes: []
+    
+    # No anti-affinity - just get it running
+    antiAffinity: false
+  
+  # Minimal resource requirements
+  resourceRequirements:
+    cpu: "200m"       # 0.2 CPU cores
+    memory: "256Mi"   # 256MB RAM
+    storage: "500Mi"  # 500MB storage

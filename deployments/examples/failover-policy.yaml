@@ -1,0 +1,36 @@
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: FailoverPolicy
+metadata:
+  name: production-failover
+  namespace: searxng
+spec:
+  enabled: true
+
+  # Apply policy to the critical workload first
+  targetWorkloads:
+    - searxng
+
+  trigger:
+    # Faster detection helps hit higher availability targets
+    nodeUnhealthyDuration: 45s
+    workloadUnhealthyDuration: 30s
+    regionalOutage: true
+  
+  strategy:
+    # Keep graceful strategy, but tighten timings for quicker recovery
+    type: graceful
+    drainTimeout: 30s
+    gracePeriod: 10s
+
+    # Prefer Hanoi nodes first
+    targetRegionPreference:
+    - hanoi
+    - melbourne
+  
+  notificationRule:
+    enabled: true
+    onNodeHealthChange: true
+    onFailoverStart: true
+    onFailoverComplete: true
+    onFailoverFailed: true
+    minSeverity: warning

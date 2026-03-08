@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# This kustomization.yaml is used to generate CRD manifests
+resources:
+- bases/geo.oiviak3s.io_nodehealthstatuses.yaml
+- bases/geo.oiviak3s.io_regionalworkloads.yaml
+- bases/geo.oiviak3s.io_failoverpolicies.yaml
+
+# The following configures CRD label for management
+commonLabels:
+  app.kubernetes.io/name: oiviak3s-operator
+  app.kubernetes.io/component: crd

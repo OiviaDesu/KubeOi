@@ -1,0 +1,35 @@
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: RegionalWorkload
+metadata:
+  name: openwebui
+  namespace: openwebui
+spec:
+  workloadRef:
+    kind: Deployment
+    name: openwebui
+  placementConstraints:
+    # Prefer Hanoi region for low latency
+    regionPreference:
+    - hanoi
+    - cloud
+    
+    # Require primary or secondary tier nodes
+    tierPreference:
+    - primary
+    - secondary
+    
+    # Must have high power stability
+    requireLabels:
+      oiviak3s.io/power-stability: high
+    
+    # Avoid specific nodes with known issues
+    avoidNodes: []
+    
+    # Enable anti-affinity for high availability
+    antiAffinity: true
+  
+  # Resource requirements
+  resourceRequirements:
+    cpu: "2000m"      # 2 CPU cores
+    memory: "4Gi"     # 4GB RAM
+    storage: "10Gi"   # 10GB storage

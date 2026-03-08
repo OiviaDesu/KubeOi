@@ -1,0 +1,88 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - patch
+  - update
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - statefulsets
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - geo.oiviak3s.io
+  resources:
+  - failoverpolicies
+  - nodehealthstatuses
+  - regionalworkloads
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - geo.oiviak3s.io
+  resources:
+  - failoverpolicies/finalizers
+  - nodehealthstatuses/finalizers
+  - regionalworkloads/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - geo.oiviak3s.io
+  resources:
+  - failoverpolicies/status
+  - nodehealthstatuses/status
+  - regionalworkloads/status
+  verbs:
+  - get
+  - patch
+  - update

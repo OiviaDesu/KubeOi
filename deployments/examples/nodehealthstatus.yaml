@@ -1,0 +1,26 @@
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: NodeHealthStatus
+metadata:
+  name: pi400
+spec:
+  nodeName: pi400
+  checkInterval: 30s
+  failureThreshold: 3
+---
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: NodeHealthStatus
+metadata:
+  name: r620-01
+spec:
+  nodeName: r620-01
+  checkInterval: 30s
+  failureThreshold: 3
+---
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: NodeHealthStatus
+metadata:
+  name: r620-02
+spec:
+  nodeName: r620-02
+  checkInterval: 30s
+  failureThreshold: 3

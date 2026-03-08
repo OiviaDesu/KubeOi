@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: oiviak3s-system
+
+# Name prefix for all resources
+namePrefix: oiviak3s-
+
+resources:
+- namespace.yaml
+- ../rbac
+- ../manager
+- ../crd
+
+# Patches for webhook (if needed in future)
+# patchesStrategicMerge:
+# - manager_webhook_patch.yaml
+
+# Images
+images:
+- name: controller
+  newName: ghcr.io/oiviadesu/oiviak3s-operator
+  newTag: latest

@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: oiviak3s-system
+  labels:
+    control-plane: controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      serviceAccountName: controller-manager
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: manager
+        image: controller:latest
+        command:
+        - /manager
+        args:
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --metrics-bind-address=:8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        env:
+        # Cluster configuration
+        - name: CLUSTER_REGIONS
+          value: "hanoi,cloud"
+        - name: DEFAULT_REGION
+          value: "hanoi"
+        # ZeroTier configuration
+        - name: ZEROTIER_NETWORK_ID
+          valueFrom:
+            secretKeyRef:
+              name: oiviak3s-config
+              key: zerotier-network-id
+        - name: ZEROTIER_INTERFACE
+          value: "zt0"
+        # Health check configuration
+        - name: HEALTH_CHECK_INTERVAL
+          value: "30s"
+        - name: HEALTH_CHECK_TIMEOUT
+          value: "10s"
+        - name: HEALTH_FAILURE_THRESHOLD
+          value: "3"
+        # Placement configuration
+        - name: PLACEMENT_STRATEGY
+          value: "geographic"
+        # Notification configuration (optional)
+        - name: TELEGRAM_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: oiviak3s-config
+              key: telegram-bot-token
+              optional: true
+        - name: TELEGRAM_CHAT_ID
+          valueFrom:
+            secretKeyRef:
+              name: oiviak3s-config
+              key: telegram-chat-id
+              optional: true
+        - name: DISCORD_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: oiviak3s-config
+              key: discord-webhook-url
+              optional: true
+        # Metrics configuration
+        - name: METRICS_BIND_ADDRESS
+          value: ":8080"
+        - name: HEALTH_PROBE_BIND_ADDRESS
+          value: ":8081"
+        # Logging configuration
+        - name: LOG_LEVEL
+          value: "info"
+        - name: LOG_FORMAT
+          value: "json"
+      terminationGracePeriodSeconds: 10

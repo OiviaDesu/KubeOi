@@ -1,0 +1,36 @@
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: RegionalWorkload
+metadata:
+  name: minecraft-server
+  namespace: minecraft
+spec:
+  workloadRef:
+    kind: StatefulSet
+    name: minecraft-server
+  placementConstraints:
+    # Prefer high-performance nodes
+    regionPreference:
+    - hanoi
+    - cloud
+    
+    # Avoid resource-constrained nodes
+    avoidNodes:
+    - pi400  # Not enough resources for Minecraft
+    
+    # Require primary or secondary tier
+    tierPreference:
+    - primary
+    - secondary
+    
+    # Need stable power for persistent world data
+    requireLabels:
+      oiviak3s.io/power-stability: high
+    
+    # No anti-affinity since it's a single-instance server
+    antiAffinity: false
+  
+  # Resource requirements for Minecraft server
+  resourceRequirements:
+    cpu: "1500m"      # 1.5 CPU cores
+    memory: "3Gi"     # 3GB RAM
+    storage: "20Gi"   # 20GB for world data

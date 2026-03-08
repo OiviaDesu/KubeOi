@@ -1,0 +1,37 @@
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: RegionalWorkload
+metadata:
+  name: searxng
+  namespace: searxng
+spec:
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: searxng
+    namespace: searxng
+  placementConstraints:
+    # Prefer Hanoi region first, Melbourne second
+    regionPreference:
+    - hanoi
+    - melbourne
+    
+    # Prioritize stronger nodes; keep tertiary only for emergency
+    tierPreference:
+    - primary
+    - secondary
+    - tertiary
+    
+    requireLabels: {}
+    
+    avoidNodes:
+    - oiviax509fj-master
+    
+    # Avoid co-locating with same app where possible
+    antiAffinity:
+    - searxng
+  
+  # Lightweight resource requirements
+  resourceRequirements:
+    cpu: "500m"       # 0.5 CPU cores
+    memory: "512Mi"   # 512MB RAM
+    storage: "1Gi"    # 1GB storage
