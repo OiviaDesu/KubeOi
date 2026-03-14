@@ -64,7 +64,7 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -102,19 +102,19 @@ func main() {
 
 	// Initialize components with dependency injection
 	setupLog.Info("initializing components")
-	
+
 	// Create health provider with registered checkers
 	healthProvider := setupHealthProvider(mgr.GetClient(), cfg, setupLog)
-	
+
 	// Create placement engine with registered strategies
 	placementEngine := setupPlacementEngine(cfg, setupLog)
-	
+
 	// Create notification manager with registered notifiers
 	notificationMgr := setupNotificationManager(cfg, setupLog)
 
 	// Create controllers with injected dependencies
 	setupLog.Info("setting up controllers")
-	
+
 	if err = controllers.NewNodeHealthStatusReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
@@ -129,6 +129,10 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		placementEngine,
+		cfg.SharedEndpointEnabled,
+		cfg.SharedEndpointMode,
+		cfg.SharedEndpointIP,
+		cfg.SharedEndpointAutoFailback,
 		ctrl.Log.WithName("controllers").WithName("RegionalWorkload"),
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RegionalWorkload")
@@ -166,14 +170,14 @@ func main() {
 // Following OCP (Open-Closed Principle) - new checkers can be added without modifying this function's structure
 func setupHealthProvider(client client.Client, cfg *config.Config, logger logr.Logger) health.Provider {
 	logger.Info("setting up health provider")
-	
+
 	provider := health.NewRegistry(logger)
-	
+
 	// Register kubelet health checker
 	kubeletChecker := kubeletcheck.NewChecker(logger)
 	provider.RegisterChecker(kubeletChecker)
 	logger.Info("registered health checker", "checker", "kubelet")
-	
+
 	// Register resource health checker
 	resourceChecker := resourcecheck.NewChecker(logger, resourcecheck.Config{
 		CPUThresholdPercent:  85.0,
@@ -182,7 +186,7 @@ func setupHealthProvider(client client.Client, cfg *config.Config, logger logr.L
 	})
 	provider.RegisterChecker(resourceChecker)
 	logger.Info("registered health checker", "checker", "resource")
-	
+
 	// Register network health checker
 	networkChecker := networkcheck.NewChecker(logger, networkcheck.Config{
 		ZerotierInterface: cfg.ZerotierInterface,
@@ -190,7 +194,7 @@ func setupHealthProvider(client client.Client, cfg *config.Config, logger logr.L
 	})
 	provider.RegisterChecker(networkChecker)
 	logger.Info("registered health checker", "checker", "network")
-	
+
 	return provider
 }
 
@@ -198,24 +202,24 @@ func setupHealthProvider(client client.Client, cfg *config.Config, logger logr.L
 // Following OCP (Open-Closed Principle) - new strategies can be added without modifying this function's structure
 func setupPlacementEngine(cfg *config.Config, logger logr.Logger) placement.Engine {
 	logger.Info("setting up placement engine")
-	
+
 	engine := placement.NewEngine(logger)
-	
+
 	// Register geographic placement strategy with weight 40
 	geoStrategy := strategy.NewGeographic()
 	engine.RegisterStrategy(geoStrategy, 40)
 	logger.Info("registered placement strategy", "strategy", "geographic", "weight", 40)
-	
+
 	// Register resource-aware placement strategy with weight 35
 	resourceStrategy := strategy.NewResourceAware()
 	engine.RegisterStrategy(resourceStrategy, 35)
 	logger.Info("registered placement strategy", "strategy", "resource-aware", "weight", 35)
-	
+
 	// Register tier-based placement strategy with weight 25
 	tierStrategy := strategy.NewTier()
 	engine.RegisterStrategy(tierStrategy, 25)
 	logger.Info("registered placement strategy", "strategy", "tier-based", "weight", 25)
-	
+
 	return engine
 }
 
@@ -223,9 +227,9 @@ func setupPlacementEngine(cfg *config.Config, logger logr.Logger) placement.Engi
 // Following OCP (Open-Closed Principle) - new notifiers can be added without modifying this function's structure
 func setupNotificationManager(cfg *config.Config, logger logr.Logger) notification.Manager {
 	logger.Info("setting up notification manager")
-	
+
 	manager := notification.NewManager(logger)
-	
+
 	// Register Telegram notifier if configured
 	if cfg.TelegramBotToken != "" && cfg.TelegramChatID != "" {
 		telegramNotifier := telegram.NewNotifier(logger, telegram.Config{
@@ -238,7 +242,7 @@ func setupNotificationManager(cfg *config.Config, logger logr.Logger) notificati
 	} else {
 		logger.Info("telegram notifier not configured - skipping")
 	}
-	
+
 	// Register Discord notifier if configured
 	if cfg.DiscordWebhookURL != "" {
 		discordNotifier := discord.NewNotifier(logger, discord.Config{
@@ -250,6 +254,6 @@ func setupNotificationManager(cfg *config.Config, logger logr.Logger) notificati
 	} else {
 		logger.Info("discord notifier not configured - skipping")
 	}
-	
+
 	return manager
 }

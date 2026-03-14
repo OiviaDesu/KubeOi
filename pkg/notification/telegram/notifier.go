@@ -30,11 +30,11 @@ import (
 
 // notifier implements notification.Notifier for Telegram
 type notifier struct {
-	logger    logr.Logger
-	botToken  string
-	chatID    string
-	enabled   bool
-	apiURL    string
+	logger     logr.Logger
+	botToken   string
+	chatID     string
+	enabled    bool
+	apiURL     string
 	httpClient *http.Client
 }
 
@@ -74,45 +74,45 @@ func (n *notifier) Send(ctx context.Context, event *notification.Event) error {
 	if !n.IsEnabled() {
 		return fmt.Errorf("telegram notifier not enabled or not configured")
 	}
-	
+
 	// Format message
 	message := n.formatMessage(event)
-	
+
 	// Prepare request payload
 	payload := map[string]interface{}{
 		"chat_id":    n.chatID,
 		"text":       message,
 		"parse_mode": "Markdown",
 	}
-	
+
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal telegram payload: %w", err)
 	}
-	
+
 	// Send request
 	url := fmt.Sprintf("%s/sendMessage", n.apiURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create telegram request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send telegram message: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("telegram API returned non-OK status: %d", resp.StatusCode)
 	}
-	
+
 	n.logger.V(1).Info("telegram notification sent",
 		"title", event.Title,
 		"severity", event.Severity)
-	
+
 	return nil
 }
 
@@ -128,11 +128,11 @@ func (n *notifier) formatMessage(event *notification.Event) string {
 	case notification.SeverityCritical:
 		icon = "🚨"
 	}
-	
+
 	msg := fmt.Sprintf("%s *%s*\n\n%s\n\n", icon, event.Title, event.Message)
 	msg += fmt.Sprintf("*Source:* %s\n", event.Source)
 	msg += fmt.Sprintf("*Severity:* %s\n", event.Severity)
 	msg += fmt.Sprintf("*Time:* %s", event.Timestamp.Format(time.RFC3339))
-	
+
 	return msg
 }

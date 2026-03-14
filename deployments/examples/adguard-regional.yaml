@@ -26,10 +26,19 @@ spec:
     avoidNodes: []
     
     # No anti-affinity - just get it running
-    antiAffinity: false
+    antiAffinity: []
+
+  # Shared endpoint keeps one stable IP during failover/failback
+  sharedEndpoint:
+    enabled: true
+    mode: kube-vip
+    ip: 192.168.86.8
+    autoFailback: true
   
-  # Minimal resource requirements
-  resourceRequirements:
-    cpu: "200m"       # 0.2 CPU cores
-    memory: "256Mi"   # 256MB RAM
-    storage: "500Mi"  # 500MB storage
+  failoverConfig:
+    enabled: true
+    maxFailoverTime: 5m
+    minHealthyReplicas: 1
+    healthCheckGracePeriod: 1m
+
+  notificationEnabled: true

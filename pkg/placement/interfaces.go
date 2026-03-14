@@ -36,16 +36,16 @@ type Decision struct {
 type Constraint struct {
 	// RegionPreference specifies preferred regions in priority order
 	RegionPreference []string
-	
+
 	// AvoidNodes lists node names to avoid
 	AvoidNodes []string
-	
+
 	// RequireLabels specifies required node labels
 	RequireLabels map[string]string
-	
+
 	// ResourceRequirements specifies minimum resource requirements
 	ResourceRequirements corev1.ResourceRequirements
-	
+
 	// TierPreference specifies preferred tier levels
 	TierPreference []string
 }
@@ -55,7 +55,7 @@ type Constraint struct {
 type Strategy interface {
 	// Name returns the unique name of this strategy
 	Name() string
-	
+
 	// Score calculates placement score for a node given constraints
 	// Higher score means better fit. Returns 0 if node is unsuitable.
 	Score(ctx context.Context, node *corev1.Node, constraints *Constraint) (float64, error)
@@ -66,10 +66,10 @@ type Strategy interface {
 type Engine interface {
 	// RegisterStrategy adds a placement strategy to the engine
 	RegisterStrategy(strategy Strategy, weight float64) error
-	
+
 	// SelectNode chooses the best node for a workload given constraints
 	SelectNode(ctx context.Context, nodes []*corev1.Node, constraints *Constraint) (*Decision, error)
-	
+
 	// ValidatePlacement checks if current placement still satisfies constraints
 	ValidatePlacement(ctx context.Context, pod *corev1.Pod, constraints *Constraint) (bool, error)
 }

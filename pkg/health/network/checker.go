@@ -30,9 +30,9 @@ import (
 // checker implements health.Checker for network connectivity
 // Checks ZeroTier interface and node reachability
 type checker struct {
-	logger           logr.Logger
+	logger            logr.Logger
 	zerotierInterface string
-	pingTimeout      time.Duration
+	pingTimeout       time.Duration
 }
 
 // Config holds configuration for network checker
@@ -49,7 +49,7 @@ func NewChecker(logger logr.Logger, cfg Config) health.Checker {
 	if cfg.PingTimeout == 0 {
 		cfg.PingTimeout = 5 * time.Second
 	}
-	
+
 	return &checker{
 		logger:            logger,
 		zerotierInterface: cfg.ZerotierInterface,
@@ -68,7 +68,7 @@ func (c *checker) Check(ctx context.Context, node *corev1.Node) (*health.CheckRe
 		Timestamp: time.Now(),
 		Details:   make(map[string]interface{}),
 	}
-	
+
 	// Get node internal IP
 	nodeIP := getNodeInternalIP(node)
 	if nodeIP == "" {
@@ -76,34 +76,34 @@ func (c *checker) Check(ctx context.Context, node *corev1.Node) (*health.CheckRe
 		result.Message = "Node internal IP not found"
 		return result, nil
 	}
-	
+
 	result.Details["nodeIP"] = nodeIP
-	
+
 	// Check if IP is reachable (basic connectivity check)
 	reachable, latency := c.checkReachability(ctx, nodeIP)
 	result.Details["reachable"] = reachable
-	
+
 	if !reachable {
 		result.Status = health.HealthStatusUnhealthy
 		result.Message = fmt.Sprintf("Node IP %s not reachable", nodeIP)
 		return result, nil
 	}
-	
+
 	result.Details["latency"] = latency.String()
-	
+
 	// Check latency thresholds
 	if latency > 500*time.Millisecond {
 		result.Status = health.HealthStatusDegraded
 		result.Message = fmt.Sprintf("High network latency: %s", latency)
 		return result, nil
 	}
-	
+
 	if latency > 200*time.Millisecond {
 		result.Status = health.HealthStatusDegraded
 		result.Message = fmt.Sprintf("Elevated network latency: %s", latency)
 		return result, nil
 	}
-	
+
 	result.Status = health.HealthStatusHealthy
 	result.Message = fmt.Sprintf("Network healthy, latency: %s", latency)
 	return result, nil
@@ -122,11 +122,11 @@ func getNodeInternalIP(node *corev1.Node) string {
 // checkReachability tests basic network reachability to an IP
 func (c *checker) checkReachability(ctx context.Context, ip string) (bool, time.Duration) {
 	start := time.Now()
-	
+
 	// Create context with timeout
 	dialCtx, cancel := context.WithTimeout(ctx, c.pingTimeout)
 	defer cancel()
-	
+
 	// Attempt TCP connection to kubelet port (10250)
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s:10250", ip))
@@ -135,7 +135,7 @@ func (c *checker) checkReachability(ctx context.Context, ip string) (bool, time.
 		return false, 0
 	}
 	defer conn.Close()
-	
+
 	latency := time.Since(start)
 	return true, latency
 }

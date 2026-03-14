@@ -35,7 +35,7 @@ func NewLoader() *Loader {
 // Load reads configuration from environment variables
 func (l *Loader) Load() (*Config, error) {
 	cfg := &Config{}
-	
+
 	// Load string values
 	cfg.ClusterRegionHanoi = getEnvOrDefault("CLUSTER_REGION_HANOI", "hanoi")
 	cfg.ClusterRegionMelbourne = getEnvOrDefault("CLUSTER_REGION_MELBOURNE", "melbourne")
@@ -49,33 +49,37 @@ func (l *Loader) Load() (*Config, error) {
 	cfg.DiscordWebhookURL = os.Getenv("DISCORD_WEBHOOK_URL")
 	cfg.PlacementStrategy = getEnvOrDefault("PLACEMENT_STRATEGY", "geographic")
 	cfg.DefaultRegionPreference = getEnvOrDefault("DEFAULT_REGION_PREFERENCE", "hanoi")
+	cfg.SharedEndpointMode = getEnvOrDefault("SHARED_ENDPOINT_MODE", "kube-vip")
+	cfg.SharedEndpointIP = getEnvOrDefault("SHARED_ENDPOINT_IP", "192.168.86.8")
 	cfg.MetricsBindAddress = getEnvOrDefault("METRICS_BIND_ADDRESS", ":8080")
 	cfg.HealthProbeBindAddress = getEnvOrDefault("HEALTH_PROBE_BIND_ADDRESS", ":8081")
 	cfg.LogLevel = getEnvOrDefault("LOG_LEVEL", "info")
 	cfg.LogFormat = getEnvOrDefault("LOG_FORMAT", "json")
-	
+
 	// Load duration values
 	var err error
 	cfg.HealthCheckInterval, err = parseDuration("HEALTH_CHECK_INTERVAL", "30s")
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cfg.HealthCheckTimeout, err = parseDuration("HEALTH_CHECK_TIMEOUT", "10s")
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Load integer values
 	cfg.FailoverThreshold, err = parseInt("FAILOVER_THRESHOLD", 3)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Load boolean values
 	cfg.NotificationEnabled = parseBool("NOTIFICATION_ENABLED", true)
+	cfg.SharedEndpointEnabled = parseBool("SHARED_ENDPOINT_ENABLED", true)
+	cfg.SharedEndpointAutoFailback = parseBool("SHARED_ENDPOINT_AUTO_FAILBACK", true)
 	cfg.LeaderElect = parseBool("LEADER_ELECT", true)
-	
+
 	return cfg, nil
 }
 
@@ -103,7 +107,7 @@ func parseInt(key string, defaultValue int) (int, error) {
 	if val == "" {
 		return defaultValue, nil
 	}
-	
+
 	intVal, err := strconv.Atoi(val)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse %s: %w", key, err)
@@ -117,7 +121,7 @@ func parseBool(key string, defaultValue bool) bool {
 	if val == "" {
 		return defaultValue
 	}
-	
+
 	boolVal, err := strconv.ParseBool(val)
 	if err != nil {
 		// Try case-insensitive string matching

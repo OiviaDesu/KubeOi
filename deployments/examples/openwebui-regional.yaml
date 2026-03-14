@@ -25,11 +25,21 @@ spec:
     # Avoid specific nodes with known issues
     avoidNodes: []
     
-    # Enable anti-affinity for high availability
-    antiAffinity: true
+    # Prefer not to co-locate with another OpenWebUI workload
+    antiAffinity:
+    - openwebui
+
+  # Shared endpoint keeps one stable IP during failover/failback
+  sharedEndpoint:
+    enabled: true
+    mode: kube-vip
+    ip: 192.168.86.8
+    autoFailback: true
   
-  # Resource requirements
-  resourceRequirements:
-    cpu: "2000m"      # 2 CPU cores
-    memory: "4Gi"     # 4GB RAM
-    storage: "10Gi"   # 10GB storage
+  failoverConfig:
+    enabled: true
+    maxFailoverTime: 5m
+    minHealthyReplicas: 1
+    healthCheckGracePeriod: 1m
+
+  notificationEnabled: true

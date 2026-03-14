@@ -1,0 +1,147 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: worldlinkd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worldlinkd
+  namespace: worldlinkd
+spec:
+  replicas: 2
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: worldlinkd
+  template:
+    metadata:
+      labels:
+        app: worldlinkd
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: location
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: worldlinkd
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: location
+                    operator: In
+                    values:
+                      - Hanoi
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: location
+                    operator: In
+                    values:
+                      - Melbourne
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: worldlinkd
+          image: aquadx/worldlinkd:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: lobby-http
+              containerPort: 20100
+            - name: relay-tcp
+              containerPort: 20101
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /info
+              port: 20100
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /info
+              port: 20100
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /info
+              port: 20100
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worldlinkd
+  namespace: worldlinkd
+spec:
+  selector:
+    app: worldlinkd
+  type: NodePort
+  ports:
+    - name: lobby-http
+      port: 20100
+      targetPort: 20100
+      protocol: TCP
+      nodePort: 30100
+    - name: relay-tcp
+      port: 20101
+      targetPort: 20101
+      protocol: TCP
+      nodePort: 30101
+---
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: RegionalWorkload
+metadata:
+  name: worldlinkd
+  namespace: worldlinkd
+spec:
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worldlinkd
+    namespace: worldlinkd
+  placementConstraints:
+    regionPreference:
+      - hanoi
+      - melbourne
+    requireLabels: {}
+    avoidNodes:
+      - oiviapi-worker
+    antiAffinity: []
+  failoverConfig:
+    enabled: true
+    maxFailoverTime: 5m
+    minHealthyReplicas: 1
+    healthCheckGracePeriod: 1m
+  sharedEndpoint:
+    enabled: true
+    mode: kube-vip
+    ip: 192.168.86.8
+    autoFailback: true
+  notificationEnabled: true

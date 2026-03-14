@@ -46,7 +46,7 @@ type CheckResult struct {
 type Checker interface {
 	// Check performs a health check and returns the result
 	Check(ctx context.Context, node *corev1.Node) (*CheckResult, error)
-	
+
 	// Name returns the unique name of this checker
 	Name() string
 }
@@ -56,10 +56,10 @@ type Checker interface {
 type Provider interface {
 	// RegisterChecker adds a health checker to the provider
 	RegisterChecker(checker Checker) error
-	
+
 	// CheckNode runs all registered checkers against a node
 	CheckNode(ctx context.Context, node *corev1.Node) ([]*CheckResult, error)
-	
+
 	// GetOverallStatus computes the overall health status from individual check results
 	GetOverallStatus(results []*CheckResult) HealthStatus
 }

@@ -55,7 +55,7 @@ func NewChecker(logger logr.Logger, cfg Config) health.Checker {
 	if cfg.DiskThresholdPercent == 0 {
 		cfg.DiskThresholdPercent = 90.0
 	}
-	
+
 	return &checker{
 		logger:               logger,
 		cpuThresholdPercent:  cfg.CPUThresholdPercent,
@@ -75,7 +75,7 @@ func (c *checker) Check(ctx context.Context, node *corev1.Node) (*health.CheckRe
 		Timestamp: time.Now(),
 		Details:   make(map[string]interface{}),
 	}
-	
+
 	// Check CPU capacity and allocatable
 	cpuStatus := c.checkResource(
 		node.Status.Capacity.Cpu(),
@@ -84,7 +84,7 @@ func (c *checker) Check(ctx context.Context, node *corev1.Node) (*health.CheckRe
 		"CPU",
 		result.Details,
 	)
-	
+
 	// Check memory capacity and allocatable
 	memStatus := c.checkResource(
 		node.Status.Capacity.Memory(),
@@ -93,7 +93,7 @@ func (c *checker) Check(ctx context.Context, node *corev1.Node) (*health.CheckRe
 		"Memory",
 		result.Details,
 	)
-	
+
 	// Check ephemeral storage
 	storageStatus := c.checkResource(
 		node.Status.Capacity.StorageEphemeral(),
@@ -102,24 +102,24 @@ func (c *checker) Check(ctx context.Context, node *corev1.Node) (*health.CheckRe
 		"Storage",
 		result.Details,
 	)
-	
+
 	// Determine overall status
-	if cpuStatus == health.HealthStatusUnhealthy || 
-	   memStatus == health.HealthStatusUnhealthy || 
-	   storageStatus == health.HealthStatusUnhealthy {
+	if cpuStatus == health.HealthStatusUnhealthy ||
+		memStatus == health.HealthStatusUnhealthy ||
+		storageStatus == health.HealthStatusUnhealthy {
 		result.Status = health.HealthStatusUnhealthy
 		result.Message = "Node resources critically low"
 		return result, nil
 	}
-	
-	if cpuStatus == health.HealthStatusDegraded || 
-	   memStatus == health.HealthStatusDegraded || 
-	   storageStatus == health.HealthStatusDegraded {
+
+	if cpuStatus == health.HealthStatusDegraded ||
+		memStatus == health.HealthStatusDegraded ||
+		storageStatus == health.HealthStatusDegraded {
 		result.Status = health.HealthStatusDegraded
 		result.Message = "Node resources under pressure"
 		return result, nil
 	}
-	
+
 	result.Status = health.HealthStatusHealthy
 	result.Message = "Node resources healthy"
 	return result, nil
@@ -136,31 +136,31 @@ func (c *checker) checkResource(
 	if capacity == nil || allocatable == nil {
 		return health.HealthStatusUnknown
 	}
-	
+
 	capacityVal := capacity.AsApproximateFloat64()
 	allocatableVal := allocatable.AsApproximateFloat64()
-	
+
 	if capacityVal == 0 {
 		return health.HealthStatusUnknown
 	}
-	
+
 	// Calculate percentage of capacity that is allocatable
 	allocatablePercent := (allocatableVal / capacityVal) * 100
-	
+
 	details[fmt.Sprintf("%sCapacity", resourceName)] = capacity.String()
 	details[fmt.Sprintf("%sAllocatable", resourceName)] = allocatable.String()
 	details[fmt.Sprintf("%sAllocatablePercent", resourceName)] = fmt.Sprintf("%.2f%%", allocatablePercent)
-	
+
 	// If allocatable is too low compared to capacity, resources are consumed
 	remainingPercent := allocatablePercent
-	
+
 	if remainingPercent < (100 - threshold) {
 		return health.HealthStatusUnhealthy
 	}
-	
+
 	if remainingPercent < (100 - (threshold * 0.7)) {
 		return health.HealthStatusDegraded
 	}
-	
+
 	return health.HealthStatusHealthy
 }

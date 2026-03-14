@@ -11,6 +11,7 @@ The Oiviak3s Operator provides cloud-native orchestration for edge computing sce
 - **Intelligent Workload Placement**: Multi-strategy placement engine considering geography, resources, and node tiers
 - **Health Monitoring**: Continuous health checks via kubelet, resource availability, and network connectivity
 - **Automated Failover**: Policy-driven failover with immediate, graceful, and manual strategies
+- **Stable Shared Endpoint IP**: Optional kube-vip backed LoadBalancer endpoint that keeps one IP across failover/failback
 - **Notification Integration**: Real-time alerts via Telegram and Discord
 - **ZeroTier Integration**: Secure mesh networking for distributed clusters
 - **SOLID Architecture**: Clean, extensible codebase following best practices
@@ -93,20 +94,27 @@ make deploy IMG=<your-registry>/oiviak3s-operator:tag
 The operator is configured via environment variables (see `config/manager/manager.yaml`):
 
 ### Cluster Configuration
-- `CLUSTER_REGIONS`: Comma-separated list of regions (default: "hanoi,cloud")
-- `DEFAULT_REGION`: Default region for placement (default: "hanoi")
+- `CLUSTER_REGION_HANOI`: Label value used for the Hanoi region (default: "hanoi")
+- `CLUSTER_REGION_MELBOURNE`: Label value used for the Melbourne region (default: "melbourne")
 
 ### ZeroTier Configuration
 - `ZEROTIER_NETWORK_ID`: Your ZeroTier network ID (required)
-- `ZEROTIER_INTERFACE`: ZeroTier interface name (default: "ztmjfaywil")
+- `ZEROTIER_INTERFACE`: ZeroTier interface name (default: "zt0")
 
 ### Health Check Configuration
 - `HEALTH_CHECK_INTERVAL`: Interval between health checks (default: "30s")
 - `HEALTH_CHECK_TIMEOUT`: Timeout for each health check (default: "10s")
-- `HEALTH_FAILURE_THRESHOLD`: Consecutive failures before marking unhealthy (default: "3")
+- `FAILOVER_THRESHOLD`: Consecutive failures before marking unhealthy (default: "3")
 
 ### Placement Configuration
 - `PLACEMENT_STRATEGY`: Primary placement strategy (default: "geographic")
+- `DEFAULT_REGION_PREFERENCE`: Preferred region used when a workload does not specify its own region order (default: "hanoi")
+
+### Shared Endpoint Configuration
+- `SHARED_ENDPOINT_ENABLED`: Enable shared endpoint by default for new workloads (default: "true")
+- `SHARED_ENDPOINT_MODE`: Shared endpoint mode (default: "kube-vip")
+- `SHARED_ENDPOINT_IP`: Shared endpoint IP address (default: "192.168.86.8")
+- `SHARED_ENDPOINT_AUTO_FAILBACK`: Auto-failback to preferred nodes after recovery (default: "true")
 
 ### Notification Configuration (Optional)
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token for notifications
@@ -131,19 +139,33 @@ metadata:
   namespace: openwebui
 spec:
   workloadRef:
+    apiVersion: apps/v1
     kind: Deployment
     name: openwebui
+    namespace: openwebui
   placementConstraints:
     regionPreference:
     - hanoi
+    - melbourne
+    requireLabels:
+      oiviak3s.io/power-stability: high
+    avoidNodes: []
+    antiAffinity:
+    - openwebui
     tierPreference:
     - primary
     - secondary
-    requireLabels:
-      oiviak3s.io/power-stability: high
-  resourceRequirements:
-    cpu: "2000m"
-    memory: "4Gi"
+  failoverConfig:
+    enabled: true
+    maxFailoverTime: 5m
+    minHealthyReplicas: 1
+    healthCheckGracePeriod: 1m
+  sharedEndpoint:
+    enabled: true
+    mode: kube-vip
+    ip: 192.168.86.8
+    autoFailback: true
+  notificationEnabled: true
 ```
 
 See `deployments/examples/` for more examples.
@@ -168,22 +190,25 @@ metadata:
   name: production-failover
 spec:
   enabled: true
-  triggers:
+  trigger:
     nodeUnhealthyDuration: 5m
     workloadUnhealthyDuration: 3m
-    regionalOutage:
-      enabled: true
-      minUnhealthyNodes: 50
+    regionalOutage: true
   strategy:
-    type: Graceful
+    type: graceful
     drainTimeout: 5m
+    gracePeriod: 30s
     targetRegionPreference:
-    - cloud
-  notificationRules:
-    onFailoverTriggered: true
-    onFailoverCompleted: true
+    - melbourne
+  notificationRule:
+    enabled: true
+    onFailoverStart: true
+    onFailoverComplete: true
     onFailoverFailed: true
+    onNodeHealthChange: false
     minSeverity: warning
+  targetWorkloads:
+  - openwebui
 ```
 
 ## Development
@@ -212,10 +237,11 @@ make manifests generate
 make test
 ```
 
-### Linting
+### Format and Vet
 
 ```bash
-make lint
+make fmt
+make vet
 ```
 
 ## Monitoring
@@ -266,6 +292,10 @@ ping <zerotier-ip-of-other-node>
 **Issue**: Notifications not working
 - **Solution**: Verify Telegram/Discord secrets are configured correctly
 - **Solution**: Check operator logs for notification errors
+
+**Issue**: External host cannot reach `192.168.86.8`
+- **Solution**: Verify the external host has a route to the LAN/VIP subnet; ZeroTier membership alone is not enough
+- **Solution**: Check the shared endpoint service status and kube-vip ownership with `kubectl get svc -n <ns> <workload>-shared-endpoint -o yaml`
 
 ## Contributing
 

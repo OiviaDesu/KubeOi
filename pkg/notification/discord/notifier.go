@@ -69,42 +69,42 @@ func (n *notifier) Send(ctx context.Context, event *notification.Event) error {
 	if !n.IsEnabled() {
 		return fmt.Errorf("discord notifier not enabled or not configured")
 	}
-	
+
 	// Create Discord embed
 	embed := n.createEmbed(event)
-	
+
 	// Prepare webhook payload
 	payload := map[string]interface{}{
 		"embeds": []interface{}{embed},
 	}
-	
+
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal discord payload: %w", err)
 	}
-	
+
 	// Send request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.webhookURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create discord request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send discord webhook: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("discord webhook returned non-OK status: %d", resp.StatusCode)
 	}
-	
+
 	n.logger.V(1).Info("discord notification sent",
 		"title", event.Title,
 		"severity", event.Severity)
-	
+
 	return nil
 }
 
@@ -118,7 +118,7 @@ func (n *notifier) createEmbed(event *notification.Event) map[string]interface{}
 	case notification.SeverityCritical:
 		color = 0xe74c3c // Red
 	}
-	
+
 	fields := []map[string]interface{}{
 		{
 			"name":   "Source",
@@ -131,7 +131,7 @@ func (n *notifier) createEmbed(event *notification.Event) map[string]interface{}
 			"inline": true,
 		},
 	}
-	
+
 	// Add metadata fields if present
 	if event.Metadata != nil {
 		for key, value := range event.Metadata {
@@ -142,7 +142,7 @@ func (n *notifier) createEmbed(event *notification.Event) map[string]interface{}
 			})
 		}
 	}
-	
+
 	embed := map[string]interface{}{
 		"title":       event.Title,
 		"description": event.Message,
@@ -153,6 +153,6 @@ func (n *notifier) createEmbed(event *notification.Event) map[string]interface{}
 			"text": "Oiviak3s Operator",
 		},
 	}
-	
+
 	return embed
 }

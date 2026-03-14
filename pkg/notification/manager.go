@@ -45,17 +45,17 @@ func (m *manager) RegisterNotifier(notifier Notifier) error {
 	if notifier == nil {
 		return fmt.Errorf("notifier cannot be nil")
 	}
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Check for duplicate notifier names
 	for _, existing := range m.notifiers {
 		if existing.Name() == notifier.Name() {
 			return fmt.Errorf("notifier with name %s already registered", notifier.Name())
 		}
 	}
-	
+
 	m.notifiers = append(m.notifiers, notifier)
 	m.logger.Info("registered notifier", "notifier", notifier.Name())
 	return nil
@@ -74,15 +74,15 @@ func (m *manager) NotifyWithFilter(ctx context.Context, event *Event, filter fun
 	notifiers := make([]Notifier, len(m.notifiers))
 	copy(notifiers, m.notifiers)
 	m.mu.RUnlock()
-	
+
 	var lastErr error
 	sentCount := 0
-	
+
 	for _, notifier := range notifiers {
 		if filter != nil && !filter(notifier) {
 			continue
 		}
-		
+
 		if err := notifier.Send(ctx, event); err != nil {
 			m.logger.Error(err, "failed to send notification",
 				"notifier", notifier.Name(),
@@ -90,17 +90,17 @@ func (m *manager) NotifyWithFilter(ctx context.Context, event *Event, filter fun
 			lastErr = err
 			continue
 		}
-		
+
 		sentCount++
 		m.logger.V(1).Info("notification sent",
 			"notifier", notifier.Name(),
 			"severity", event.Severity,
 			"title", event.Title)
 	}
-	
+
 	if sentCount == 0 && lastErr != nil {
 		return fmt.Errorf("all notifiers failed: %w", lastErr)
 	}
-	
+
 	return nil
 }

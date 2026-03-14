@@ -45,10 +45,10 @@ type Event struct {
 type Notifier interface {
 	// Send sends a notification event
 	Send(ctx context.Context, event *Event) error
-	
+
 	// Name returns the unique name of this notifier
 	Name() string
-	
+
 	// IsEnabled checks if this notifier is enabled
 	IsEnabled() bool
 }
@@ -58,10 +58,10 @@ type Notifier interface {
 type Manager interface {
 	// RegisterNotifier adds a notifier to the manager
 	RegisterNotifier(notifier Notifier) error
-	
+
 	// Notify sends an event to all enabled notifiers
 	Notify(ctx context.Context, event *Event) error
-	
+
 	// NotifyWithFilter sends an event only to notifiers matching the filter
 	NotifyWithFilter(ctx context.Context, event *Event, filter func(Notifier) bool) error
 }

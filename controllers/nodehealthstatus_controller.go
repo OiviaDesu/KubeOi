@@ -24,6 +24,7 @@ import (
 	geov1alpha1 "github.com/oiviadesu/oiviak3s-operator/api/v1alpha1"
 	"github.com/oiviadesu/oiviak3s-operator/pkg/health"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -64,7 +65,7 @@ func NewNodeHealthStatusReconciler(
 // Reconcile performs the reconciliation logic for NodeHealthStatus
 func (r *NodeHealthStatusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	
+
 	// Fetch the NodeHealthStatus resource
 	nodeHealth := &geov1alpha1.NodeHealthStatus{}
 	if err := r.Get(ctx, req.NamespacedName, nodeHealth); err != nil {
@@ -74,7 +75,7 @@ func (r *NodeHealthStatusReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		logger.Error(err, "unable to fetch NodeHealthStatus")
 		return ctrl.Result{}, err
 	}
-	
+
 	// Fetch the corresponding Node
 	node := &corev1.Node{}
 	if err := r.Get(ctx, client.ObjectKey{Name: nodeHealth.Spec.NodeName}, node); err != nil {
@@ -85,24 +86,24 @@ func (r *NodeHealthStatusReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		logger.Error(err, "unable to fetch Node")
 		return ctrl.Result{}, err
 	}
-	
+
 	// Perform health checks
 	checkResults, err := r.HealthProvider.CheckNode(ctx, node)
 	if err != nil {
 		logger.Error(err, "health check failed", "node", node.Name)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	
+
 	// Update status with check results
 	oldStatus := nodeHealth.Status.OverallStatus
 	r.updateStatus(nodeHealth, node, checkResults)
-	
+
 	// Update the resource status
 	if err := r.Status().Update(ctx, nodeHealth); err != nil {
 		logger.Error(err, "unable to update NodeHealthStatus status")
 		return ctrl.Result{}, err
 	}
-	
+
 	// Log status transitions
 	if oldStatus != nodeHealth.Status.OverallStatus {
 		logger.Info("node health status changed",
@@ -110,13 +111,13 @@ func (r *NodeHealthStatusReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			"oldStatus", oldStatus,
 			"newStatus", nodeHealth.Status.OverallStatus)
 	}
-	
+
 	// Requeue based on configured interval
 	interval := nodeHealth.Spec.CheckInterval.Duration
 	if interval == 0 {
 		interval = 30 * time.Second
 	}
-	
+
 	return ctrl.Result{RequeueAfter: interval}, nil
 }
 
@@ -129,45 +130,49 @@ func (r *NodeHealthStatusReconciler) updateStatus(
 	// Convert check results to status format
 	checks := make([]geov1alpha1.HealthCheckStatus, 0, len(checkResults))
 	for _, result := range checkResults {
+		if result == nil {
+			continue
+		}
+
 		checkStatus := geov1alpha1.HealthCheckStatus{
-			CheckerName:   result.Details["checker"].(string),
+			CheckerName:   checkResultCheckerName(result),
 			Status:        string(result.Status),
 			Message:       result.Message,
 			LastCheckTime: metav1.NewTime(result.Timestamp),
 			Details:       make(map[string]string),
 		}
-		
+
 		// Convert details map
 		for k, v := range result.Details {
 			if str, ok := v.(string); ok {
 				checkStatus.Details[k] = str
 			}
 		}
-		
+
 		checks = append(checks, checkStatus)
 	}
-	
+
 	// Get overall status
 	overallStatus := r.HealthProvider.GetOverallStatus(checkResults)
-	
+
 	// Check if status changed
 	statusChanged := nodeHealth.Status.OverallStatus != string(overallStatus)
-	
+
 	// Update consecutive failures
 	if overallStatus == health.HealthStatusUnhealthy {
 		nodeHealth.Status.ConsecutiveFailures++
 	} else {
 		nodeHealth.Status.ConsecutiveFailures = 0
 	}
-	
+
 	// Update status fields
 	nodeHealth.Status.OverallStatus = string(overallStatus)
 	nodeHealth.Status.Checks = checks
-	
+
 	if statusChanged {
 		nodeHealth.Status.LastTransitionTime = metav1.NewTime(time.Now())
 	}
-	
+
 	// Extract region and tier from node labels
 	if region, ok := node.Labels["oiviak3s.io/region"]; ok {
 		nodeHealth.Status.Region = region
@@ -175,7 +180,7 @@ func (r *NodeHealthStatusReconciler) updateStatus(
 	if tier, ok := node.Labels["oiviak3s.io/tier"]; ok {
 		nodeHealth.Status.Tier = tier
 	}
-	
+
 	// Update conditions
 	r.updateConditions(nodeHealth, overallStatus)
 }
@@ -193,7 +198,7 @@ func (r *NodeHealthStatusReconciler) updateConditions(
 		Reason:             "NodeHealthy",
 		Message:            "Node is healthy",
 	}
-	
+
 	switch status {
 	case health.HealthStatusUnhealthy:
 		condition.Status = metav1.ConditionFalse
@@ -208,9 +213,22 @@ func (r *NodeHealthStatusReconciler) updateConditions(
 		condition.Reason = "NodeUnknown"
 		condition.Message = "Node health is unknown"
 	}
-	
+
 	// Update or append condition
-	nodeHealth.Status.Conditions = []metav1.Condition{condition}
+	meta.SetStatusCondition(&nodeHealth.Status.Conditions, condition)
+}
+
+func checkResultCheckerName(result *health.CheckResult) string {
+	if result == nil || result.Details == nil {
+		return "unknown"
+	}
+
+	checkerName, ok := result.Details["checker"].(string)
+	if !ok || checkerName == "" {
+		return "unknown"
+	}
+
+	return checkerName
 }
 
 // SetupWithManager sets up the controller with the Manager

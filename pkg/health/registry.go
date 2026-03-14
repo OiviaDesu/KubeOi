@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -46,17 +47,17 @@ func (r *registry) RegisterChecker(checker Checker) error {
 	if checker == nil {
 		return fmt.Errorf("checker cannot be nil")
 	}
-	
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	// Check for duplicate checker names
 	for _, existing := range r.checkers {
 		if existing.Name() == checker.Name() {
 			return fmt.Errorf("checker with name %s already registered", checker.Name())
 		}
 	}
-	
+
 	r.checkers = append(r.checkers, checker)
 	r.logger.Info("registered health checker", "checker", checker.Name())
 	return nil
@@ -68,23 +69,25 @@ func (r *registry) CheckNode(ctx context.Context, node *corev1.Node) ([]*CheckRe
 	checkers := make([]Checker, len(r.checkers))
 	copy(checkers, r.checkers)
 	r.mu.RUnlock()
-	
+
 	results := make([]*CheckResult, 0, len(checkers))
-	
+
 	for _, checker := range checkers {
 		result, err := checker.Check(ctx, node)
 		if err != nil {
 			r.logger.Error(err, "health check failed", "checker", checker.Name(), "node", node.Name)
 			// Create a failed result instead of returning error (graceful degradation)
 			result = &CheckResult{
-				Status:  HealthStatusUnknown,
-				Message: fmt.Sprintf("check failed: %v", err),
-				Details: map[string]interface{}{"error": err.Error()},
+				Status:    HealthStatusUnknown,
+				Message:   fmt.Sprintf("check failed: %v", err),
+				Timestamp: time.Now(),
+				Details:   map[string]interface{}{"error": err.Error(), "checker": checker.Name()},
 			}
 		}
+		result = normalizeCheckResult(result, checker.Name())
 		results = append(results, result)
 	}
-	
+
 	return results, nil
 }
 
@@ -93,12 +96,17 @@ func (r *registry) GetOverallStatus(results []*CheckResult) HealthStatus {
 	if len(results) == 0 {
 		return HealthStatusUnknown
 	}
-	
+
 	hasUnhealthy := false
 	hasDegraded := false
 	hasUnknown := false
-	
+
 	for _, result := range results {
+		if result == nil {
+			hasUnknown = true
+			continue
+		}
+
 		switch result.Status {
 		case HealthStatusUnhealthy:
 			hasUnhealthy = true
@@ -108,7 +116,7 @@ func (r *registry) GetOverallStatus(results []*CheckResult) HealthStatus {
 			hasUnknown = true
 		}
 	}
-	
+
 	// Worst status wins
 	if hasUnhealthy {
 		return HealthStatusUnhealthy
@@ -119,6 +127,29 @@ func (r *registry) GetOverallStatus(results []*CheckResult) HealthStatus {
 	if hasUnknown {
 		return HealthStatusUnknown
 	}
-	
+
 	return HealthStatusHealthy
+}
+
+func normalizeCheckResult(result *CheckResult, checkerName string) *CheckResult {
+	if result == nil {
+		return &CheckResult{
+			Status:    HealthStatusUnknown,
+			Message:   "checker returned nil result",
+			Timestamp: time.Now(),
+			Details:   map[string]interface{}{"checker": checkerName},
+		}
+	}
+
+	if result.Timestamp.IsZero() {
+		result.Timestamp = time.Now()
+	}
+	if result.Details == nil {
+		result.Details = make(map[string]interface{})
+	}
+	if _, exists := result.Details["checker"]; !exists {
+		result.Details["checker"] = checkerName
+	}
+
+	return result
 }

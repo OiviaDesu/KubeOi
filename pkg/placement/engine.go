@@ -56,22 +56,22 @@ func (e *engine) RegisterStrategy(strategy Strategy, weight float64) error {
 	if weight < 0 {
 		return fmt.Errorf("weight must be non-negative, got %f", weight)
 	}
-	
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	// Check for duplicate strategy names
 	for _, existing := range e.strategies {
 		if existing.strategy.Name() == strategy.Name() {
 			return fmt.Errorf("strategy with name %s already registered", strategy.Name())
 		}
 	}
-	
+
 	e.strategies = append(e.strategies, strategyEntry{
 		strategy: strategy,
 		weight:   weight,
 	})
-	
+
 	e.logger.Info("registered placement strategy", "strategy", strategy.Name(), "weight", weight)
 	return nil
 }
@@ -81,41 +81,41 @@ func (e *engine) SelectNode(ctx context.Context, nodes []*corev1.Node, constrain
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("no nodes available for placement")
 	}
-	
+
 	e.mu.RLock()
 	strategies := make([]strategyEntry, len(e.strategies))
 	copy(strategies, e.strategies)
 	e.mu.RUnlock()
-	
+
 	if len(strategies) == 0 {
 		return nil, fmt.Errorf("no placement strategies registered")
 	}
-	
+
 	// Calculate weighted scores for each node
 	type nodeScore struct {
 		node  *corev1.Node
 		score float64
 	}
-	
+
 	nodeScores := make([]nodeScore, 0, len(nodes))
-	
+
 	for _, node := range nodes {
 		totalScore := 0.0
 		totalWeight := 0.0
-		
+
 		for _, entry := range strategies {
 			score, err := entry.strategy.Score(ctx, node, constraints)
 			if err != nil {
-				e.logger.Error(err, "strategy scoring failed", 
-					"strategy", entry.strategy.Name(), 
+				e.logger.Error(err, "strategy scoring failed",
+					"strategy", entry.strategy.Name(),
 					"node", node.Name)
 				continue
 			}
-			
+
 			totalScore += score * entry.weight
 			totalWeight += entry.weight
 		}
-		
+
 		// Normalize by total weight
 		if totalWeight > 0 {
 			normalizedScore := totalScore / totalWeight
@@ -127,34 +127,34 @@ func (e *engine) SelectNode(ctx context.Context, nodes []*corev1.Node, constrain
 			}
 		}
 	}
-	
+
 	if len(nodeScores) == 0 {
 		return nil, fmt.Errorf("no suitable nodes found for placement")
 	}
-	
+
 	// Sort by score descending
 	sort.Slice(nodeScores, func(i, j int) bool {
 		return nodeScores[i].score > nodeScores[j].score
 	})
-	
+
 	// Build decision with top node and alternates
 	alternates := make([]string, 0, len(nodeScores)-1)
 	for i := 1; i < len(nodeScores) && i < 4; i++ {
 		alternates = append(alternates, nodeScores[i].node.Name)
 	}
-	
+
 	decision := &Decision{
 		TargetNode:     nodeScores[0].node.Name,
 		Reason:         fmt.Sprintf("highest weighted score: %.2f", nodeScores[0].score),
 		Score:          nodeScores[0].score,
 		AlternateNodes: alternates,
 	}
-	
+
 	e.logger.Info("placement decision made",
 		"targetNode", decision.TargetNode,
 		"score", decision.Score,
 		"alternates", len(alternates))
-	
+
 	return decision, nil
 }
 
@@ -163,17 +163,17 @@ func (e *engine) ValidatePlacement(ctx context.Context, pod *corev1.Pod, constra
 	if pod.Spec.NodeName == "" {
 		return false, nil
 	}
-	
+
 	e.mu.RLock()
 	strategies := make([]strategyEntry, len(e.strategies))
 	copy(strategies, e.strategies)
 	e.mu.RUnlock()
-	
+
 	// Validate against each strategy
 	// For validation, we just check if the node would score > 0
 	node := &corev1.Node{}
 	node.Name = pod.Spec.NodeName
-	
+
 	for _, entry := range strategies {
 		score, err := entry.strategy.Score(ctx, node, constraints)
 		if err != nil {
@@ -182,7 +182,7 @@ func (e *engine) ValidatePlacement(ctx context.Context, pod *corev1.Pod, constra
 				"pod", pod.Name)
 			return false, err
 		}
-		
+
 		if score <= 0 {
 			e.logger.Info("placement validation failed",
 				"pod", pod.Name,
@@ -191,6 +191,6 @@ func (e *engine) ValidatePlacement(ctx context.Context, pod *corev1.Pod, constra
 			return false, nil
 		}
 	}
-	
+
 	return true, nil
 }

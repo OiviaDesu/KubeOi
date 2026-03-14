@@ -56,10 +56,10 @@ spec:
             memory: 128Mi
         env:
         # Cluster configuration
-        - name: CLUSTER_REGIONS
-          value: "hanoi,cloud"
-        - name: DEFAULT_REGION
+        - name: CLUSTER_REGION_HANOI
           value: "hanoi"
+        - name: CLUSTER_REGION_MELBOURNE
+          value: "melbourne"
         # ZeroTier configuration
         - name: ZEROTIER_NETWORK_ID
           valueFrom:
@@ -73,11 +73,22 @@ spec:
           value: "30s"
         - name: HEALTH_CHECK_TIMEOUT
           value: "10s"
-        - name: HEALTH_FAILURE_THRESHOLD
+        - name: FAILOVER_THRESHOLD
           value: "3"
         # Placement configuration
         - name: PLACEMENT_STRATEGY
           value: "geographic"
+        - name: DEFAULT_REGION_PREFERENCE
+          value: "hanoi"
+        # Shared endpoint defaults
+        - name: SHARED_ENDPOINT_ENABLED
+          value: "true"
+        - name: SHARED_ENDPOINT_MODE
+          value: "kube-vip"
+        - name: SHARED_ENDPOINT_IP
+          value: "192.168.86.8"
+        - name: SHARED_ENDPOINT_AUTO_FAILBACK
+          value: "true"
         # Notification configuration (optional)
         - name: TELEGRAM_BOT_TOKEN
           valueFrom:

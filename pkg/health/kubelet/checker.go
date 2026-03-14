@@ -50,7 +50,7 @@ func (c *checker) Check(ctx context.Context, node *corev1.Node) (*health.CheckRe
 		Timestamp: time.Now(),
 		Details:   make(map[string]interface{}),
 	}
-	
+
 	// Check node Ready condition
 	readyCondition := getNodeCondition(node, corev1.NodeReady)
 	if readyCondition == nil {
@@ -58,35 +58,35 @@ func (c *checker) Check(ctx context.Context, node *corev1.Node) (*health.CheckRe
 		result.Message = "Ready condition not found"
 		return result, nil
 	}
-	
+
 	result.Details["readyStatus"] = string(readyCondition.Status)
 	result.Details["readyReason"] = readyCondition.Reason
 	result.Details["lastHeartbeat"] = readyCondition.LastHeartbeatTime.String()
-	
+
 	// Check if node is Ready
 	if readyCondition.Status != corev1.ConditionTrue {
 		result.Status = health.HealthStatusUnhealthy
 		result.Message = fmt.Sprintf("Node not ready: %s", readyCondition.Reason)
 		return result, nil
 	}
-	
+
 	// Check for other concerning conditions
 	if hasProblematicConditions(node, result.Details) {
 		result.Status = health.HealthStatusDegraded
 		result.Message = "Node has problematic conditions"
 		return result, nil
 	}
-	
+
 	// Check heartbeat staleness
 	heartbeatAge := time.Since(readyCondition.LastHeartbeatTime.Time)
 	result.Details["heartbeatAge"] = heartbeatAge.String()
-	
+
 	if heartbeatAge > 40*time.Second {
 		result.Status = health.HealthStatusDegraded
 		result.Message = fmt.Sprintf("Kubelet heartbeat stale: %s", heartbeatAge)
 		return result, nil
 	}
-	
+
 	result.Status = health.HealthStatusHealthy
 	result.Message = "Kubelet healthy and responsive"
 	return result, nil
@@ -105,30 +105,30 @@ func getNodeCondition(node *corev1.Node, conditionType corev1.NodeConditionType)
 // hasProblematicConditions checks for conditions indicating issues
 func hasProblematicConditions(node *corev1.Node, details map[string]interface{}) bool {
 	problematic := false
-	
+
 	// Check MemoryPressure
 	if cond := getNodeCondition(node, corev1.NodeMemoryPressure); cond != nil && cond.Status == corev1.ConditionTrue {
 		details["memoryPressure"] = true
 		problematic = true
 	}
-	
+
 	// Check DiskPressure
 	if cond := getNodeCondition(node, corev1.NodeDiskPressure); cond != nil && cond.Status == corev1.ConditionTrue {
 		details["diskPressure"] = true
 		problematic = true
 	}
-	
+
 	// Check PIDPressure
 	if cond := getNodeCondition(node, corev1.NodePIDPressure); cond != nil && cond.Status == corev1.ConditionTrue {
 		details["pidPressure"] = true
 		problematic = true
 	}
-	
+
 	// Check NetworkUnavailable
 	if cond := getNodeCondition(node, corev1.NodeNetworkUnavailable); cond != nil && cond.Status == corev1.ConditionTrue {
 		details["networkUnavailable"] = true
 		problematic = true
 	}
-	
+
 	return problematic
 }

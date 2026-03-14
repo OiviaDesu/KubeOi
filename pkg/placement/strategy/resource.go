@@ -44,26 +44,26 @@ func (s *resourceAware) Score(ctx context.Context, node *corev1.Node, constraint
 		// No constraints, score based on general availability
 		return s.scoreGeneralResources(node), nil
 	}
-	
+
 	// Check if node meets minimum requirements
 	if !s.meetsRequirements(node, constraints) {
 		return 0, nil
 	}
-	
+
 	// Score based on how much resources are available beyond requirements
 	cpuScore := s.scoreResource(
 		node.Status.Allocatable.Cpu(),
 		constraints.ResourceRequirements.Requests.Cpu(),
 	)
-	
+
 	memScore := s.scoreResource(
 		node.Status.Allocatable.Memory(),
 		constraints.ResourceRequirements.Requests.Memory(),
 	)
-	
+
 	// Average CPU and memory scores
 	totalScore := (cpuScore + memScore) / 2.0
-	
+
 	return totalScore, nil
 }
 
@@ -76,7 +76,7 @@ func (s *resourceAware) meetsRequirements(node *corev1.Node, constraints *placem
 			return false
 		}
 	}
-	
+
 	if constraints.ResourceRequirements.Requests.Memory() != nil {
 		required := constraints.ResourceRequirements.Requests.Memory().Value()
 		available := node.Status.Allocatable.Memory().Value()
@@ -84,7 +84,7 @@ func (s *resourceAware) meetsRequirements(node *corev1.Node, constraints *placem
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -93,9 +93,9 @@ func (s *resourceAware) scoreResource(available, required *resource.Quantity) fl
 	if available == nil || available.IsZero() {
 		return 0
 	}
-	
+
 	availableVal := available.AsApproximateFloat64()
-	
+
 	// If no requirement specified, score based on total availability
 	if required == nil || required.IsZero() {
 		// Normalize to 0-100 scale (assume 100 cores is max for scoring)
@@ -105,10 +105,10 @@ func (s *resourceAware) scoreResource(available, required *resource.Quantity) fl
 		}
 		return score
 	}
-	
+
 	requiredVal := required.AsApproximateFloat64()
 	ratio := availableVal / requiredVal
-	
+
 	// Score based on how much headroom is available
 	// 1x requirement = 20, 2x = 50, 4x = 80, 8x+ = 100
 	if ratio < 1 {
@@ -120,7 +120,7 @@ func (s *resourceAware) scoreResource(available, required *resource.Quantity) fl
 	} else if ratio < 8 {
 		return 80 + ((ratio - 4) * 5)
 	}
-	
+
 	return 100
 }
 
@@ -128,6 +128,6 @@ func (s *resourceAware) scoreResource(available, required *resource.Quantity) fl
 func (s *resourceAware) scoreGeneralResources(node *corev1.Node) float64 {
 	cpuScore := s.scoreResource(node.Status.Allocatable.Cpu(), nil)
 	memScore := s.scoreResource(node.Status.Allocatable.Memory(), nil)
-	
+
 	return (cpuScore + memScore) / 2.0
 }

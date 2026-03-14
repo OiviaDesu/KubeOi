@@ -25,6 +25,7 @@ import (
 	geov1alpha1 "github.com/oiviadesu/oiviak3s-operator/api/v1alpha1"
 	"github.com/oiviadesu/oiviak3s-operator/pkg/notification"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -68,7 +69,7 @@ func NewFailoverPolicyReconciler(
 // Reconcile performs the reconciliation logic for FailoverPolicy
 func (r *FailoverPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	
+
 	// Fetch the FailoverPolicy resource
 	policy := &geov1alpha1.FailoverPolicy{}
 	if err := r.Get(ctx, req.NamespacedName, policy); err != nil {
@@ -78,64 +79,72 @@ func (r *FailoverPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Error(err, "unable to fetch FailoverPolicy")
 		return ctrl.Result{}, err
 	}
-	
+
 	// Check if policy is enabled
 	if !policy.Spec.Enabled {
 		logger.Info("policy is disabled", "policy", policy.Name)
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
-	
+
 	// Get all node health statuses
 	healthList := &geov1alpha1.NodeHealthStatusList{}
 	if err := r.List(ctx, healthList); err != nil {
 		logger.Error(err, "unable to list NodeHealthStatus")
 		return ctrl.Result{}, err
 	}
-	
+
 	// Get all regional workloads
 	workloadList := &geov1alpha1.RegionalWorkloadList{}
 	if err := r.List(ctx, workloadList); err != nil {
 		logger.Error(err, "unable to list RegionalWorkload")
 		return ctrl.Result{}, err
 	}
-	
+
 	// Check for failover triggers
 	triggered, reason := r.checkFailoverTriggers(policy, healthList.Items, workloadList.Items)
-	
+
 	if triggered {
 		logger.Info("failover triggered", "reason", reason)
-		
+
 		// Send notification if enabled
 		if policy.Spec.NotificationRule.OnFailoverStart {
 			r.sendNotification(ctx, policy, "Failover Triggered", reason, notification.SeverityCritical)
 		}
-		
+
 		// Execute failover based on strategy
 		if err := r.executeFailover(ctx, policy, workloadList.Items, reason); err != nil {
 			logger.Error(err, "failover execution failed")
-			
+
 			if policy.Spec.NotificationRule.OnFailoverFailed {
 				r.sendNotification(ctx, policy, "Failover Failed", err.Error(), notification.SeverityCritical)
 			}
-			
+
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		
+
 		// Send success notification
 		if policy.Spec.NotificationRule.OnFailoverComplete {
 			r.sendNotification(ctx, policy, "Failover Completed", "Workloads successfully failed over", notification.SeverityInfo)
 		}
-		
+
 		// Record failover event
 		r.recordFailoverEvent(policy, reason, "Success")
-		
+		meta.SetStatusCondition(&policy.Status.Conditions, metav1.Condition{
+			Type:               "FailoverReady",
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: policy.Generation,
+			LastTransitionTime: metav1.NewTime(time.Now()),
+			Reason:             "FailoverCompleted",
+			Message:            "Failover processed successfully",
+		})
+
 		// Update status
 		if err := r.Status().Update(ctx, policy); err != nil {
 			logger.Error(err, "unable to update status")
 			return ctrl.Result{}, err
 		}
 	}
-	
+
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
@@ -146,7 +155,7 @@ func (r *FailoverPolicyReconciler) checkFailoverTriggers(
 	workloads []geov1alpha1.RegionalWorkload,
 ) (bool, string) {
 	triggers := policy.Spec.Trigger
-	
+
 	// Check node unhealthy duration trigger
 	if triggers.NodeUnhealthyDuration.Duration > 0 {
 		for _, health := range healthStatuses {
@@ -158,25 +167,25 @@ func (r *FailoverPolicyReconciler) checkFailoverTriggers(
 			}
 		}
 	}
-	
+
 	// Check workload unhealthy duration trigger
 	if triggers.WorkloadUnhealthyDuration.Duration > 0 {
 		for _, workload := range workloads {
 			if workload.Status.Health.Status == "Unhealthy" {
 				unhealthyDuration := time.Since(workload.Status.Health.LastCheckTime.Time)
 				if unhealthyDuration >= triggers.WorkloadUnhealthyDuration.Duration {
-					return true, fmt.Sprintf("Workload %s/%s unhealthy for %v", 
+					return true, fmt.Sprintf("Workload %s/%s unhealthy for %v",
 						workload.Namespace, workload.Name, unhealthyDuration)
 				}
 			}
 		}
 	}
-	
+
 	// Check regional outage trigger
 	if triggers.RegionalOutage {
 		unhealthyByRegion := make(map[string]int)
 		totalByRegion := make(map[string]int)
-		
+
 		for _, health := range healthStatuses {
 			region := health.Status.Region
 			if region == "" {
@@ -187,7 +196,7 @@ func (r *FailoverPolicyReconciler) checkFailoverTriggers(
 				unhealthyByRegion[region]++
 			}
 		}
-		
+
 		for region, unhealthy := range unhealthyByRegion {
 			total := totalByRegion[region]
 			if total > 0 && unhealthy == total {
@@ -196,7 +205,7 @@ func (r *FailoverPolicyReconciler) checkFailoverTriggers(
 			}
 		}
 	}
-	
+
 	return false, ""
 }
 
@@ -209,7 +218,7 @@ func (r *FailoverPolicyReconciler) executeFailover(
 ) error {
 	logger := log.FromContext(ctx)
 	strategy := policy.Spec.Strategy
-	
+
 	switch strategy.Type {
 	case geov1alpha1.FailoverImmediate:
 		return r.executeImmediateFailover(ctx, workloads)
@@ -229,7 +238,7 @@ func (r *FailoverPolicyReconciler) executeImmediateFailover(
 	workloads []geov1alpha1.RegionalWorkload,
 ) error {
 	logger := log.FromContext(ctx)
-	
+
 	for _, workload := range workloads {
 		// Trigger workload reconciliation by updating annotation
 		annotations := workload.GetAnnotations()
@@ -238,15 +247,15 @@ func (r *FailoverPolicyReconciler) executeImmediateFailover(
 		}
 		annotations["geo.oiviak3s.io/failover-triggered"] = time.Now().Format(time.RFC3339)
 		workload.SetAnnotations(annotations)
-		
+
 		if err := r.Update(ctx, &workload); err != nil {
 			logger.Error(err, "failed to trigger workload failover", "workload", workload.Name)
 			return err
 		}
-		
+
 		logger.Info("triggered immediate failover", "workload", workload.Name)
 	}
-	
+
 	return nil
 }
 
@@ -257,7 +266,7 @@ func (r *FailoverPolicyReconciler) executeGracefulFailover(
 	drainTimeout time.Duration,
 ) error {
 	logger := log.FromContext(ctx)
-	
+
 	// Get affected nodes
 	affectedNodes := make(map[string]bool)
 	for _, workload := range workloads {
@@ -265,7 +274,7 @@ func (r *FailoverPolicyReconciler) executeGracefulFailover(
 			affectedNodes[workload.Status.Placement.NodeName] = true
 		}
 	}
-	
+
 	// Cordon affected nodes
 	for nodeName := range affectedNodes {
 		node := &corev1.Node{}
@@ -273,20 +282,22 @@ func (r *FailoverPolicyReconciler) executeGracefulFailover(
 			logger.Error(err, "unable to get node", "node", nodeName)
 			continue
 		}
-		
+
 		// Mark node as unschedulable
 		node.Spec.Unschedulable = true
 		if err := r.Update(ctx, node); err != nil {
 			logger.Error(err, "failed to cordon node", "node", nodeName)
 			return err
 		}
-		
+
 		logger.Info("cordoned node for graceful failover", "node", nodeName)
 	}
-	
+
 	// Wait for drain timeout
-	time.Sleep(drainTimeout)
-	
+	if err := waitForDrainTimeout(ctx, drainTimeout); err != nil {
+		return err
+	}
+
 	// Trigger workload reconciliation
 	return r.executeImmediateFailover(ctx, workloads)
 }
@@ -299,13 +310,13 @@ func (r *FailoverPolicyReconciler) sendNotification(
 	severity notification.Severity,
 ) {
 	logger := log.FromContext(ctx)
-	
+
 	// Check minimum severity
 	minSeverity := notification.Severity(policy.Spec.NotificationRule.MinSeverity)
-	if severity < minSeverity {
+	if severityLevel(severity) < severityLevel(minSeverity) {
 		return
 	}
-	
+
 	event := notification.Event{
 		Title:     title,
 		Message:   message,
@@ -316,9 +327,38 @@ func (r *FailoverPolicyReconciler) sendNotification(
 			"policy": policy.Name,
 		},
 	}
-	
+
 	if err := r.NotificationManager.Notify(ctx, &event); err != nil {
 		logger.Error(err, "failed to send notification")
+	}
+}
+
+func waitForDrainTimeout(ctx context.Context, drainTimeout time.Duration) error {
+	if drainTimeout <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(drainTimeout)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("drain interrupted: %w", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
+}
+
+func severityLevel(severity notification.Severity) int {
+	switch severity {
+	case notification.SeverityCritical:
+		return 3
+	case notification.SeverityWarning:
+		return 2
+	case notification.SeverityInfo:
+		return 1
+	default:
+		return 0
 	}
 }
 
@@ -333,13 +373,13 @@ func (r *FailoverPolicyReconciler) recordFailoverEvent(
 		Reason:    reason,
 		Success:   success == "Success",
 	}
-	
+
 	// Keep only last 10 events
 	policy.Status.RecentEvents = append([]geov1alpha1.FailoverEvent{event}, policy.Status.RecentEvents...)
 	if len(policy.Status.RecentEvents) > 10 {
 		policy.Status.RecentEvents = policy.Status.RecentEvents[:10]
 	}
-	
+
 	policy.Status.LastFailoverTime = &event.Timestamp
 }
 

@@ -48,14 +48,14 @@ func (s *geographic) Score(ctx context.Context, node *corev1.Node, constraints *
 		// No region preference, all nodes score equally
 		return 50.0, nil
 	}
-	
+
 	// Get node region from label
 	nodeRegion, hasRegion := node.Labels[LabelRegion]
 	if !hasRegion {
 		// Node has no region label, score low but not zero
 		return 10.0, nil
 	}
-	
+
 	// Find region in preference list
 	for i, preferredRegion := range constraints.RegionPreference {
 		if nodeRegion == preferredRegion {
@@ -68,7 +68,7 @@ func (s *geographic) Score(ctx context.Context, node *corev1.Node, constraints *
 			return score, nil
 		}
 	}
-	
+
 	// Region not in preference list, but node is labeled
 	return 15.0, nil
 }

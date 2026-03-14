@@ -26,7 +26,7 @@ import (
 const (
 	// LabelTier is the label key for node tier
 	LabelTier = "oiviak3s.io/tier"
-	
+
 	// LabelPowerStability is the label key for power stability rating
 	LabelPowerStability = "oiviak3s.io/power-stability"
 )
@@ -48,7 +48,7 @@ func (s *tier) Name() string {
 // Score calculates placement score based on tier preferences and stability
 func (s *tier) Score(ctx context.Context, node *corev1.Node, constraints *placement.Constraint) (float64, error) {
 	baseScore := 50.0
-	
+
 	// Check if node is in avoid list
 	if constraints != nil && len(constraints.AvoidNodes) > 0 {
 		for _, avoidNode := range constraints.AvoidNodes {
@@ -57,7 +57,7 @@ func (s *tier) Score(ctx context.Context, node *corev1.Node, constraints *placem
 			}
 		}
 	}
-	
+
 	// Check required labels
 	if constraints != nil && len(constraints.RequireLabels) > 0 {
 		for key, value := range constraints.RequireLabels {
@@ -67,7 +67,7 @@ func (s *tier) Score(ctx context.Context, node *corev1.Node, constraints *placem
 			}
 		}
 	}
-	
+
 	// Score based on tier preference
 	if constraints != nil && len(constraints.TierPreference) > 0 {
 		nodeTier, hasTier := node.Labels[LabelTier]
@@ -98,7 +98,7 @@ func (s *tier) Score(ctx context.Context, node *corev1.Node, constraints *placem
 			}
 		}
 	}
-	
+
 	// Adjust score based on power stability
 	powerStability, hasStability := node.Labels[LabelPowerStability]
 	if hasStability {
@@ -111,11 +111,11 @@ func (s *tier) Score(ctx context.Context, node *corev1.Node, constraints *placem
 			baseScore *= 0.8 // 20% penalty
 		}
 	}
-	
+
 	// Cap score at 100
 	if baseScore > 100 {
 		baseScore = 100
 	}
-	
+
 	return baseScore, nil
 }

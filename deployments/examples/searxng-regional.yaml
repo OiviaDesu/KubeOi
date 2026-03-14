@@ -29,9 +29,18 @@ spec:
     # Avoid co-locating with same app where possible
     antiAffinity:
     - searxng
-  
-  # Lightweight resource requirements
-  resourceRequirements:
-    cpu: "500m"       # 0.5 CPU cores
-    memory: "512Mi"   # 512MB RAM
-    storage: "1Gi"    # 1GB storage
+
+  # Shared endpoint keeps one stable IP during failover/failback
+  sharedEndpoint:
+    enabled: true
+    mode: kube-vip
+    ip: 192.168.86.8
+    autoFailback: true
+
+  failoverConfig:
+    enabled: true
+    maxFailoverTime: 5m
+    minHealthyReplicas: 1
+    healthCheckGracePeriod: 1m
+
+  notificationEnabled: true

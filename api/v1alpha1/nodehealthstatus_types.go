@@ -24,11 +24,11 @@ import (
 type NodeHealthStatusSpec struct {
 	// NodeName is the name of the node being monitored
 	NodeName string `json:"nodeName"`
-	
+
 	// CheckInterval specifies how often to check node health
 	// +kubebuilder:default="30s"
 	CheckInterval metav1.Duration `json:"checkInterval,omitempty"`
-	
+
 	// FailureThreshold is the number of consecutive failures before marking unhealthy
 	// +kubebuilder:default=3
 	// +kubebuilder:validation:Minimum=1
@@ -39,16 +39,16 @@ type NodeHealthStatusSpec struct {
 type HealthCheckStatus struct {
 	// CheckerName is the name of the health checker
 	CheckerName string `json:"checkerName"`
-	
+
 	// Status is the health status from this checker
 	Status string `json:"status"`
-	
+
 	// Message provides additional context about the status
 	Message string `json:"message,omitempty"`
-	
+
 	// LastCheckTime is when this check was last performed
 	LastCheckTime metav1.Time `json:"lastCheckTime"`
-	
+
 	// Details contains additional check-specific information
 	Details map[string]string `json:"details,omitempty"`
 }
@@ -58,22 +58,22 @@ type NodeHealthStatusStatus struct {
 	// OverallStatus is the aggregated health status
 	// +kubebuilder:validation:Enum=Healthy;Degraded;Unhealthy;Unknown
 	OverallStatus string `json:"overallStatus"`
-	
+
 	// Checks contains the status of individual health checks
 	Checks []HealthCheckStatus `json:"checks,omitempty"`
-	
+
 	// LastTransitionTime is when the overall status last changed
 	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
-	
+
 	// ConsecutiveFailures is the number of consecutive failures
 	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
-	
+
 	// Conditions represent the latest available observations of the node's state
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	
+
 	// Region is the geographic region of this node
 	Region string `json:"region,omitempty"`
-	
+
 	// Tier is the priority tier of this node
 	Tier string `json:"tier,omitempty"`
 }
