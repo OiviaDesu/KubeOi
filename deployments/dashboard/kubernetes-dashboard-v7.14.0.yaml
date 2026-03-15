@@ -1,0 +1,934 @@
+# Rendered from the upstream kubernetes-dashboard Helm chart 7.14.0
+# with Kong chart 2.52.0, then trimmed for repo-managed manifests.
+#
+# Before applying this file, create the runtime CSRF secret:
+# kubectl -n kubernetes-dashboard create secret generic kubernetes-dashboard-csrf \
+#   --from-literal=private.key="$(openssl rand -base64 256 | tr -d '\n')"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-dashboard-kong
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: "3.9"
+    helm.sh/chart: kong-2.52.0
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-dashboard-api
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.14.0
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-dashboard-metrics-scraper
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-metrics-scraper
+    app.kubernetes.io/component: metrics-scraper
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.2.2
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-dashboard-web
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-web
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.7.0
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-dbless-config
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    services:
+      - name: auth
+        host: kubernetes-dashboard-auth
+        port: 8000
+        protocol: http
+        routes:
+          - name: authLogin
+            paths:
+              - /api/v1/login
+            strip_path: false
+          - name: authCsrf
+            paths:
+              - /api/v1/csrftoken/login
+            strip_path: false
+          - name: authMe
+            paths:
+              - /api/v1/me
+            strip_path: false
+      - name: api
+        host: kubernetes-dashboard-api
+        port: 8000
+        protocol: http
+        routes:
+          - name: api
+            paths:
+              - /api
+            strip_path: false
+          - name: metrics
+            paths:
+              - /metrics
+            strip_path: false
+      - name: web
+        host: kubernetes-dashboard-web
+        port: 8000
+        protocol: http
+        routes:
+          - name: root
+            paths:
+              - /
+            strip_path: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-dashboard-web-settings
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-web
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+data: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernetes-dashboard-metrics-scraper
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-metrics-scraper
+    app.kubernetes.io/component: metrics-scraper
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-dashboard-metrics-scraper
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-metrics-scraper
+    app.kubernetes.io/component: metrics-scraper
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernetes-dashboard-metrics-scraper
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-dashboard-metrics-scraper
+    namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernetes-dashboard-api
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+rules:
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    resourceNames:
+      - kubernetes-dashboard-metrics-scraper
+      - http:kubernetes-dashboard-metrics-scraper
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernetes-dashboard-web
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-web
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kubernetes-dashboard-web-settings"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernetes-dashboard-api
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernetes-dashboard-api
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-dashboard-api
+    namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernetes-dashboard-web
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-web
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernetes-dashboard-web
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-dashboard-web
+    namespace: kubernetes-dashboard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-dashboard-kong-proxy
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: "3.9"
+    helm.sh/chart: kong-2.52.0
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: kubernetes-dashboard
+  ports:
+    - name: kong-proxy-tls
+      port: 443
+      targetPort: 8443
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-dashboard-api
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.14.0
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kubernetes-dashboard-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/instance: kubernetes-dashboard
+  ports:
+    - name: api
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-dashboard-auth
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-auth
+    app.kubernetes.io/component: auth
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.4.0
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kubernetes-dashboard-auth
+    app.kubernetes.io/component: auth
+    app.kubernetes.io/instance: kubernetes-dashboard
+  ports:
+    - name: auth
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-dashboard-metrics-scraper
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-metrics-scraper
+    app.kubernetes.io/component: metrics-scraper
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.2.2
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kubernetes-dashboard-metrics-scraper
+    app.kubernetes.io/component: metrics-scraper
+    app.kubernetes.io/instance: kubernetes-dashboard
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-dashboard-web
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-web
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.7.0
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kubernetes-dashboard-web
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: kubernetes-dashboard
+  ports:
+    - name: web
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-dashboard-kong
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: "3.9"
+    helm.sh/chart: kong-2.52.0
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kong
+      app.kubernetes.io/component: app
+      app.kubernetes.io/instance: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kong
+        app.kubernetes.io/component: app
+        app.kubernetes.io/instance: kubernetes-dashboard
+        app.kubernetes.io/managed-by: repo
+        app.kubernetes.io/part-of: kubernetes-dashboard
+        app.kubernetes.io/version: "3.9"
+        helm.sh/chart: kong-2.52.0
+    spec:
+      serviceAccountName: kubernetes-dashboard-kong
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: clear-stale-pid
+          image: kong:3.9
+          imagePullPolicy: IfNotPresent
+          command: ["rm", "-vrf", "$KONG_PREFIX/pids"]
+          env:
+            - name: KONG_ADMIN_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_ADMIN_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_ADMIN_GUI_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_ADMIN_GUI_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_ADMIN_LISTEN
+              value: 127.0.0.1:8444 http2 ssl, [::1]:8444 http2 ssl
+            - name: KONG_CLUSTER_LISTEN
+              value: "off"
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: /kong_dbless/kong.yml
+            - name: KONG_DNS_ORDER
+              value: LAST,A,CNAME,AAAA,SRV
+            - name: KONG_LUA_PACKAGE_PATH
+              value: /opt/?.lua;/opt/?/init.lua;;
+            - name: KONG_NGINX_WORKER_PROCESSES
+              value: "1"
+            - name: KONG_PLUGINS
+              value: "off"
+            - name: KONG_PORTAL_API_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_PORTAL_API_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_PORT_MAPS
+              value: 443:8443
+            - name: KONG_PREFIX
+              value: /kong_prefix/
+            - name: KONG_PROXY_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_PROXY_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_PROXY_LISTEN
+              value: 0.0.0.0:8443 http2 ssl, [::]:8443 http2 ssl
+            - name: KONG_PROXY_STREAM_ACCESS_LOG
+              value: /dev/stdout basic
+            - name: KONG_PROXY_STREAM_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_ROUTER_FLAVOR
+              value: traditional
+            - name: KONG_STATUS_ACCESS_LOG
+              value: "off"
+            - name: KONG_STATUS_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_STATUS_LISTEN
+              value: 0.0.0.0:8100, [::]:8100
+            - name: KONG_STREAM_LISTEN
+              value: "off"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: kong-prefix-dir
+              mountPath: /kong_prefix/
+            - name: kong-tmp
+              mountPath: /tmp
+            - name: kong-dbless-config
+              mountPath: /kong_dbless/
+      containers:
+        - name: proxy
+          image: kong:3.9
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KONG_ADMIN_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_ADMIN_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_ADMIN_GUI_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_ADMIN_GUI_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_ADMIN_LISTEN
+              value: 127.0.0.1:8444 http2 ssl, [::1]:8444 http2 ssl
+            - name: KONG_CLUSTER_LISTEN
+              value: "off"
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: /kong_dbless/kong.yml
+            - name: KONG_DNS_ORDER
+              value: LAST,A,CNAME,AAAA,SRV
+            - name: KONG_LUA_PACKAGE_PATH
+              value: /opt/?.lua;/opt/?/init.lua;;
+            - name: KONG_NGINX_WORKER_PROCESSES
+              value: "1"
+            - name: KONG_PLUGINS
+              value: "off"
+            - name: KONG_PORTAL_API_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_PORTAL_API_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_PORT_MAPS
+              value: 443:8443
+            - name: KONG_PREFIX
+              value: /kong_prefix/
+            - name: KONG_PROXY_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_PROXY_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_PROXY_LISTEN
+              value: 0.0.0.0:8443 http2 ssl, [::]:8443 http2 ssl
+            - name: KONG_PROXY_STREAM_ACCESS_LOG
+              value: /dev/stdout basic
+            - name: KONG_PROXY_STREAM_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_ROUTER_FLAVOR
+              value: traditional
+            - name: KONG_STATUS_ACCESS_LOG
+              value: "off"
+            - name: KONG_STATUS_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_STATUS_LISTEN
+              value: 0.0.0.0:8100, [::]:8100
+            - name: KONG_STREAM_LISTEN
+              value: "off"
+            - name: KONG_NGINX_DAEMON
+              value: "off"
+          ports:
+            - name: proxy-tls
+              containerPort: 8443
+              protocol: TCP
+            - name: status
+              containerPort: 8100
+              protocol: TCP
+          lifecycle:
+            preStop:
+              exec:
+                command: ["kong", "quit", "--wait=15"]
+          readinessProbe:
+            httpGet:
+              path: /status/ready
+              port: status
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: status
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: kong-prefix-dir
+              mountPath: /kong_prefix/
+            - name: kong-tmp
+              mountPath: /tmp
+            - name: kong-dbless-config
+              mountPath: /kong_dbless/
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: kong-prefix-dir
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: kong-tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: kong-dbless-config
+          configMap:
+            name: kong-dbless-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-dashboard-api
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.14.0
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernetes-dashboard-api
+      app.kubernetes.io/component: api
+      app.kubernetes.io/instance: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernetes-dashboard-api
+        app.kubernetes.io/component: api
+        app.kubernetes.io/instance: kubernetes-dashboard
+        app.kubernetes.io/managed-by: repo
+        app.kubernetes.io/part-of: kubernetes-dashboard
+        app.kubernetes.io/version: 1.14.0
+        helm.sh/chart: kubernetes-dashboard-7.14.0
+    spec:
+      serviceAccountName: kubernetes-dashboard-api
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kubernetes-dashboard-api
+          image: docker.io/kubernetesui/dashboard-api:1.14.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --namespace=kubernetes-dashboard
+            - --metrics-scraper-service-name=kubernetes-dashboard-metrics-scraper
+          env:
+            - name: CSRF_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kubernetes-dashboard-csrf
+                  key: private.key
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.cpu
+                  divisor: "1"
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
+                  divisor: "1"
+          ports:
+            - name: api
+              containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsUser: 1001
+            runAsGroup: 2001
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: 250m
+              memory: 400Mi
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-dashboard-auth
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-auth
+    app.kubernetes.io/component: auth
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.4.0
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernetes-dashboard-auth
+      app.kubernetes.io/component: auth
+      app.kubernetes.io/instance: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernetes-dashboard-auth
+        app.kubernetes.io/component: auth
+        app.kubernetes.io/instance: kubernetes-dashboard
+        app.kubernetes.io/managed-by: repo
+        app.kubernetes.io/part-of: kubernetes-dashboard
+        app.kubernetes.io/version: 1.4.0
+        helm.sh/chart: kubernetes-dashboard-7.14.0
+    spec:
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kubernetes-dashboard-auth
+          image: docker.io/kubernetesui/dashboard-auth:1.4.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CSRF_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kubernetes-dashboard-csrf
+                  key: private.key
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.cpu
+                  divisor: "1"
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
+                  divisor: "1"
+          ports:
+            - name: auth
+              containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsUser: 1001
+            runAsGroup: 2001
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: 250m
+              memory: 400Mi
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-dashboard-metrics-scraper
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-metrics-scraper
+    app.kubernetes.io/component: metrics-scraper
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.2.2
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernetes-dashboard-metrics-scraper
+      app.kubernetes.io/component: metrics-scraper
+      app.kubernetes.io/instance: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernetes-dashboard-metrics-scraper
+        app.kubernetes.io/component: metrics-scraper
+        app.kubernetes.io/instance: kubernetes-dashboard
+        app.kubernetes.io/managed-by: repo
+        app.kubernetes.io/part-of: kubernetes-dashboard
+        app.kubernetes.io/version: 1.2.2
+        helm.sh/chart: kubernetes-dashboard-7.14.0
+    spec:
+      serviceAccountName: kubernetes-dashboard-metrics-scraper
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kubernetes-dashboard-metrics-scraper
+          image: docker.io/kubernetesui/dashboard-metrics-scraper:1.2.2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.cpu
+                  divisor: "1"
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
+                  divisor: "1"
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsUser: 1001
+            runAsGroup: 2001
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: 250m
+              memory: 400Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-dashboard-web
+  namespace: kubernetes-dashboard
+  labels:
+    app.kubernetes.io/name: kubernetes-dashboard-web
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: kubernetes-dashboard
+    app.kubernetes.io/managed-by: repo
+    app.kubernetes.io/part-of: kubernetes-dashboard
+    app.kubernetes.io/version: 1.7.0
+    helm.sh/chart: kubernetes-dashboard-7.14.0
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernetes-dashboard-web
+      app.kubernetes.io/component: web
+      app.kubernetes.io/instance: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernetes-dashboard-web
+        app.kubernetes.io/component: web
+        app.kubernetes.io/instance: kubernetes-dashboard
+        app.kubernetes.io/managed-by: repo
+        app.kubernetes.io/part-of: kubernetes-dashboard
+        app.kubernetes.io/version: 1.7.0
+        helm.sh/chart: kubernetes-dashboard-7.14.0
+    spec:
+      serviceAccountName: kubernetes-dashboard-web
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kubernetes-dashboard-web
+          image: docker.io/kubernetesui/dashboard-web:1.7.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --namespace=kubernetes-dashboard
+            - --settings-config-map-name=kubernetes-dashboard-web-settings
+          env:
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.cpu
+                  divisor: "1"
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
+                  divisor: "1"
+          ports:
+            - name: web
+              containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsUser: 1001
+            runAsGroup: 2001
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: 250m
+              memory: 400Mi
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}

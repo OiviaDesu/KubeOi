@@ -135,6 +135,30 @@ spec:
                     description: Enabled determines if a shared endpoint should be
                       managed for this workload
                     type: boolean
+                  endpoints:
+                    description: |-
+                      Endpoints mirrors the same backend behavior across multiple public IPs.
+                      When specified, every endpoint publishes the same service port set.
+                    items:
+                      description: SharedEndpointTarget specifies one public entrypoint
+                        for a shared endpoint workload.
+                      properties:
+                        ip:
+                          description: IP is the public IP address for this shared
+                            endpoint target.
+                          pattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$
+                          type: string
+                        name:
+                          description: Name is a stable identifier used to name the
+                            managed Service.
+                          maxLength: 63
+                          minLength: 1
+                          type: string
+                      required:
+                      - ip
+                      - name
+                      type: object
+                    type: array
                   ip:
                     default: 192.168.86.8
                     description: IP is the shared endpoint IP address
@@ -148,8 +172,8 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-validations:
-                - message: ip is required when shared endpoint is enabled
-                  rule: '!self.enabled || has(self.ip)'
+                - message: ip or endpoints is required when shared endpoint is enabled
+                  rule: '!self.enabled || has(self.ip) || size(self.endpoints) > 0'
               workloadRef:
                 description: WorkloadRef references the underlying workload (Deployment,
                   StatefulSet, etc)

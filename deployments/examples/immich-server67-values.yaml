@@ -1,0 +1,48 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          tag: v2.0.0
+        env:
+          REDIS_HOSTNAME: 10.43.39.173
+          IMMICH_MACHINE_LEARNING_URL: http://10.43.94.152:3003
+
+# Force all Immich components onto server67
+# (supported by bjw-s common library used by this chart)
+defaultPodOptions:
+  nodeSelector:
+    kubernetes.io/hostname: server67
+
+server:
+  controllers:
+    main:
+      containers:
+        main:
+          env:
+            DB_HOSTNAME:
+              value: 10.43.115.110
+            DB_USERNAME:
+              valueFrom:
+                secretKeyRef:
+                  name: immich-database-app
+                  key: user
+            DB_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: immich-database-app
+                  key: password
+            DB_DATABASE_NAME:
+              valueFrom:
+                secretKeyRef:
+                  name: immich-database-app
+                  key: dbname
+            DB_VECTOR_EXTENSION: vectorchord
+
+valkey:
+  enabled: true
+
+immich:
+  persistence:
+    library:
+      existingClaim: immich-library-pvc

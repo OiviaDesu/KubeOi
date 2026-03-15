@@ -170,6 +170,102 @@ spec:
 
 See `deployments/examples/` for more examples.
 
+### Kubernetes Dashboard Integration
+
+The repository now includes a repo-managed Kubernetes Dashboard stack under `deployments/dashboard/` and an Oiviak3s public entrypoint example under `deployments/examples/kubernetes-dashboard-k3s-migration.yaml`.
+
+Architecture summary:
+
+- `deployments/dashboard/namespace.yaml` creates a dedicated `kubernetes-dashboard` namespace.
+- `deployments/dashboard/kubernetes-dashboard-v7.14.0.yaml` vendors a Helm-rendered Dashboard 7.14.0 snapshot with internal `ClusterIP` services only.
+- `deployments/examples/kubernetes-dashboard-k3s-migration.yaml` adds a thin HAProxy TCP passthrough gateway on port `9443`.
+- `RegionalWorkload` manages only the public gateway deployment, so Oiviak3s continues to own a single public workload and shared endpoint for Dashboard traffic.
+- TLS stays encrypted all the way from the client to the Dashboard's internal Kong proxy. The public HAProxy workload does TCP passthrough only and does not terminate TLS.
+- The vendored snapshot does not install `metrics-server`; Dashboard metrics views require an existing cluster-level metrics server.
+
+Mirrored ingress behavior on this k3s cluster:
+
+- On this cluster, the practical way to expose the same workload through both `192.168.86.8` and `192.168.86.40` is **one** `LoadBalancer` Service per workload, with k3s ServiceLB restricted to those two ingress nodes.
+- The service then mirrors the same selector and port set across both ingress nodes automatically; you do not need two separate `LoadBalancer` Services for the same workload.
+- The API still supports `sharedEndpoint.endpoints[]` for VIP-aware implementations, but the checked-in examples use the k3s-compatible single-service shape.
+
+Required k3s ServiceLB node selection:
+
+```bash
+kubectl label node oiviax509fj-master svccontroller.k3s.cattle.io/enablelb=true --overwrite
+kubectl label node oiviapi-worker svccontroller.k3s.cattle.io/enablelb=true --overwrite
+kubectl label node oiviamacmini-worker svccontroller.k3s.cattle.io/enablelb-
+kubectl label node server67 svccontroller.k3s.cattle.io/enablelb-
+```
+
+Important runtime limitation on this cluster:
+
+k3s ServiceLB uses `hostPort` per Service port. Two separate `LoadBalancer` Services that both want the same public port on the same ingress nodes will conflict, so this cluster should publish mirrored traffic with one shared-endpoint Service per workload.
+
+Deployment order:
+
+```bash
+kubectl apply -f deployments/dashboard/namespace.yaml
+kubectl -n kubernetes-dashboard create secret generic kubernetes-dashboard-csrf \
+  --from-literal=private.key="$(openssl rand -base64 256 | tr -d '\n')"
+kubectl apply -f deployments/dashboard/kubernetes-dashboard-v7.14.0.yaml
+kubectl apply -f deployments/examples/kubernetes-dashboard-k3s-migration.yaml
+```
+
+Access and verification:
+
+```bash
+kubectl get pods -n kubernetes-dashboard
+kubectl get regionalworkload -n kubernetes-dashboard kubernetes-dashboard-gateway
+kubectl get svc -n kubernetes-dashboard | grep kubernetes-dashboard-gateway-shared-endpoint
+curl -kI https://192.168.86.8:9443/
+curl -kI https://192.168.86.40:9443/
+```
+
+If the example is unchanged, both `https://192.168.86.8:9443/` and `https://192.168.86.40:9443/` should reach the same Dashboard gateway behavior.
+
+By default this vendored path uses Kong's built-in certificate, so browsers and API clients will treat it as untrusted unless you replace that certificate path in a follow-up hardening step.
+
+Always verify the effective public address with:
+
+```bash
+kubectl get svc -n kubernetes-dashboard | grep kubernetes-dashboard-gateway-shared-endpoint
+```
+
+If your cluster is using a different LoadBalancer implementation than kube-vip, or if the control-plane node does not advertise an `ExternalIP`, the observed `EXTERNAL-IP` may not list every reachable ingress node. Treat the ServiceLB node selection and the service status together as the source of truth for actual published reachability.
+
+For the currently documented routed node set:
+
+- `x509fj=192.168.86.8`
+- `macmini=192.168.86.41`
+- `pi=192.168.86.40`
+- `server67=192.168.86.15` (Hanoi, not yet ready for placement/failover)
+
+Do not document or deploy a Dashboard address outside that routed set unless you have explicitly provisioned an additional VIP on your network.
+
+Runtime user and token flow:
+
+- The repo does not create an admin `ClusterRoleBinding`, bootstrap token, or long-lived credential.
+- Create a runtime-only user yourself after rollout. For a temporary cluster-admin session, for example:
+
+```bash
+kubectl -n kubernetes-dashboard create serviceaccount admin-user
+kubectl create clusterrolebinding kubernetes-dashboard-admin-user \
+  --clusterrole=cluster-admin \
+  --serviceaccount=kubernetes-dashboard:admin-user
+kubectl -n kubernetes-dashboard create token admin-user
+```
+
+- Delete the temporary binding and service account when you are done, or replace the `cluster-admin` binding with a narrower role for day-to-day use.
+
+Manual failover check:
+
+```bash
+kubectl get endpoints -n kubernetes-dashboard kubernetes-dashboard-kong-proxy
+kubectl get svc -n kubernetes-dashboard kubernetes-dashboard-gateway-shared-endpoint -o wide
+# then simulate node failure/drain according to your runbook and confirm HTTPS recovers on :9443
+```
+
 ### Node Health Monitoring
 
 The operator automatically creates NodeHealthStatus resources for each node:
@@ -296,6 +392,18 @@ ping <zerotier-ip-of-other-node>
 **Issue**: External host cannot reach `192.168.86.8`
 - **Solution**: Verify the external host has a route to the LAN/VIP subnet; ZeroTier membership alone is not enough
 - **Solution**: Check the shared endpoint service status and kube-vip ownership with `kubectl get svc -n <ns> <workload>-shared-endpoint -o yaml`
+
+**Issue**: Dashboard port `9443` is unreachable on the ingress nodes
+- **Solution**: Check `kubectl get svc -n kubernetes-dashboard kubernetes-dashboard-gateway-shared-endpoint -o yaml` and confirm the operator exposed port `9443` from the gateway deployment
+- **Solution**: Verify nothing else is already using the same public port on the ServiceLB ingress nodes; k3s ServiceLB reserves host ports per service port
+
+**Issue**: Dashboard login page loads but API calls fail
+- **Solution**: Confirm the internal `kubernetes-dashboard-kong-proxy`, `kubernetes-dashboard-api`, `kubernetes-dashboard-auth`, and `kubernetes-dashboard-web` services all have ready endpoints
+- **Solution**: Recreate the runtime `kubernetes-dashboard-csrf` secret and restart the Dashboard deployments if the secret was missing during initial rollout
+
+**Issue**: Browser cannot complete token login
+- **Solution**: Make sure you are using HTTPS to the Dashboard VIP and port; token login is expected to fail over plain HTTP
+- **Solution**: Verify the runtime service account or binding was created outside the default example, since the repo intentionally ships no admin bootstrap
 
 ## Contributing
 

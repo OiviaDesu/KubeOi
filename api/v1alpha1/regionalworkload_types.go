@@ -59,8 +59,20 @@ type FailoverConfig struct {
 	HealthCheckGracePeriod metav1.Duration `json:"healthCheckGracePeriod,omitempty"`
 }
 
-// SharedEndpointConfig specifies a stable endpoint IP shared across failover events
-// +kubebuilder:validation:XValidation:rule="!self.enabled || has(self.ip)",message="ip is required when shared endpoint is enabled"
+// SharedEndpointTarget specifies one public entrypoint for a shared endpoint workload.
+type SharedEndpointTarget struct {
+	// Name is a stable identifier used to name the managed Service.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+
+	// IP is the public IP address for this shared endpoint target.
+	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$`
+	IP string `json:"ip"`
+}
+
+// SharedEndpointConfig specifies stable endpoint IPs shared across failover events.
+// +kubebuilder:validation:XValidation:rule="!self.enabled || has(self.ip) || size(self.endpoints) > 0",message="ip or endpoints is required when shared endpoint is enabled"
 type SharedEndpointConfig struct {
 	// Enabled determines if a shared endpoint should be managed for this workload
 	// +kubebuilder:default=true
@@ -75,6 +87,10 @@ type SharedEndpointConfig struct {
 	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$`
 	// +kubebuilder:default="192.168.86.8"
 	IP string `json:"ip,omitempty"`
+
+	// Endpoints mirrors the same backend behavior across multiple public IPs.
+	// When specified, every endpoint publishes the same service port set.
+	Endpoints []SharedEndpointTarget `json:"endpoints,omitempty"`
 
 	// AutoFailback determines if placement should automatically return to preferred nodes after recovery
 	// +kubebuilder:default=true

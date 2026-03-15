@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,8 +29,8 @@ import (
 	"github.com/oiviadesu/oiviak3s-operator/pkg/placement"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -51,6 +52,18 @@ type RegionalWorkloadReconciler struct {
 	DefaultSharedEndpointMode         string
 	DefaultSharedEndpointIP           string
 	DefaultSharedEndpointAutoFailback bool
+}
+
+type validationError struct {
+	field   string
+	message string
+}
+
+func (e *validationError) Error() string {
+	if e.field == "" {
+		return e.message
+	}
+	return fmt.Sprintf("invalid %s: %s", e.field, e.message)
 }
 
 // NewRegionalWorkloadReconciler creates a new reconciler with dependencies injected
@@ -83,7 +96,7 @@ func NewRegionalWorkloadReconciler(
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile performs the reconciliation logic for RegionalWorkload
 func (r *RegionalWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -98,6 +111,18 @@ func (r *RegionalWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		logger.Error(err, "unable to fetch RegionalWorkload")
 		return ctrl.Result{}, err
 	}
+
+	if err := r.validateWorkload(workload); err != nil {
+		logger.Error(err, "regional workload validation failed")
+		r.updateCondition(workload, "ConfigurationReady", metav1.ConditionFalse, "ValidationFailed", err.Error())
+		r.updateCondition(workload, "EndpointReady", metav1.ConditionFalse, "ValidationFailed", err.Error())
+		if statusErr := r.Status().Update(ctx, workload); statusErr != nil {
+			logger.Error(statusErr, "unable to update invalid workload status")
+			return ctrl.Result{}, statusErr
+		}
+		return ctrl.Result{}, nil
+	}
+	r.updateCondition(workload, "ConfigurationReady", metav1.ConditionTrue, "ValidationSucceeded", "RegionalWorkload configuration is valid")
 
 	// Get all healthy nodes
 	nodeList := &corev1.NodeList{}
@@ -128,11 +153,11 @@ func (r *RegionalWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	decision, err := r.PlacementEngine.SelectNode(ctx, healthyNodes, constraint)
 	if err != nil {
 		logger.Error(err, "placement decision failed")
-		r.updateStatusError(workload, err)
+		r.updateStatusError(workload, "PlacementReady", "PlacementFailed", err)
 		if err := r.Status().Update(ctx, workload); err != nil {
 			logger.Error(err, "unable to update status")
 		}
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Update placement status
@@ -147,7 +172,12 @@ func (r *RegionalWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// Reconcile shared endpoint service
 	if err := r.reconcileSharedEndpoint(ctx, workload); err != nil {
 		logger.Error(err, "failed to reconcile shared endpoint")
-		return ctrl.Result{}, err
+		r.updateStatusError(workload, "EndpointReady", "EndpointReconcileFailed", err)
+		if statusErr := r.Status().Update(ctx, workload); statusErr != nil {
+			logger.Error(statusErr, "unable to update endpoint failure status")
+			return ctrl.Result{}, statusErr
+		}
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Update workload health
@@ -204,29 +234,39 @@ func (r *RegionalWorkloadReconciler) updatePlacementStatus(
 	}
 
 	// Update conditions
-	condition := metav1.Condition{
-		Type:               "PlacementReady",
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: workload.Generation,
-		LastTransitionTime: metav1.NewTime(time.Now()),
-		Reason:             "PlacementSuccessful",
-		Message:            fmt.Sprintf("Workload placed on node %s in region %s", decision.TargetNode, decision.Region),
-	}
-	meta.SetStatusCondition(&workload.Status.Conditions, condition)
+	r.updateCondition(
+		workload,
+		"PlacementReady",
+		metav1.ConditionTrue,
+		"PlacementSuccessful",
+		fmt.Sprintf("Workload placed on node %s in region %s", decision.TargetNode, decision.Region),
+	)
 }
 
 // updateStatusError updates status on error
 func (r *RegionalWorkloadReconciler) updateStatusError(
 	workload *geov1alpha1.RegionalWorkload,
+	conditionType string,
+	reason string,
 	err error,
 ) {
+	r.updateCondition(workload, conditionType, metav1.ConditionFalse, reason, err.Error())
+}
+
+func (r *RegionalWorkloadReconciler) updateCondition(
+	workload *geov1alpha1.RegionalWorkload,
+	conditionType string,
+	status metav1.ConditionStatus,
+	reason string,
+	message string,
+) {
 	condition := metav1.Condition{
-		Type:               "PlacementReady",
-		Status:             metav1.ConditionFalse,
+		Type:               conditionType,
+		Status:             status,
 		ObservedGeneration: workload.Generation,
 		LastTransitionTime: metav1.NewTime(time.Now()),
-		Reason:             "PlacementFailed",
-		Message:            fmt.Sprintf("Failed to place workload: %v", err),
+		Reason:             reason,
+		Message:            message,
 	}
 	meta.SetStatusCondition(&workload.Status.Conditions, condition)
 }
@@ -247,6 +287,12 @@ func (r *RegionalWorkloadReconciler) resolveSharedEndpointConfig(
 		cfg.Enabled = r.DefaultSharedEndpointEnabled
 		cfg.AutoFailback = r.DefaultSharedEndpointAutoFailback
 	}
+	if len(cfg.Endpoints) == 0 && cfg.IP != "" {
+		cfg.Endpoints = []geov1alpha1.SharedEndpointTarget{{
+			Name: "primary",
+			IP:   cfg.IP,
+		}}
+	}
 
 	return cfg
 }
@@ -258,66 +304,119 @@ func (r *RegionalWorkloadReconciler) reconcileSharedEndpoint(
 ) error {
 	cfg := r.resolveSharedEndpointConfig(workload)
 	if !cfg.Enabled {
-		return r.deleteSharedEndpoint(ctx, workload)
+		if err := r.deleteSharedEndpointServices(ctx, workload); err != nil {
+			return err
+		}
+		r.updateCondition(workload, "EndpointReady", metav1.ConditionFalse, "SharedEndpointDisabled", "Shared endpoints are disabled")
+		return nil
 	}
 
 	if cfg.Mode != "kube-vip" {
-		return fmt.Errorf("unsupported shared endpoint mode: %s", cfg.Mode)
+		return &validationError{field: "sharedEndpoint.mode", message: fmt.Sprintf("unsupported shared endpoint mode %q", cfg.Mode)}
 	}
 
-	desired, err := r.buildSharedEndpointService(ctx, workload, cfg)
+	desiredServices, err := r.buildSharedEndpointServices(ctx, workload, cfg)
 	if err != nil {
 		return err
 	}
 
-	key := client.ObjectKeyFromObject(desired)
-	existing := &corev1.Service{}
-	if err := r.Get(ctx, key, existing); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-		return r.Create(ctx, desired)
+	if err := r.syncSharedEndpointServices(ctx, workload, desiredServices); err != nil {
+		return err
 	}
 
-	return r.updateSharedEndpointService(ctx, existing, desired)
+	r.updateCondition(workload, "EndpointReady", metav1.ConditionTrue, "SharedEndpointsReady", fmt.Sprintf("Reconciled %d shared endpoint service(s)", len(desiredServices)))
+	return nil
 }
 
+func (r *RegionalWorkloadReconciler) syncSharedEndpointServices(
+	ctx context.Context,
+	workload *geov1alpha1.RegionalWorkload,
+	desiredServices []*corev1.Service,
+) error {
+	desiredByName := make(map[string]*corev1.Service, len(desiredServices))
+	for _, desired := range desiredServices {
+		desiredByName[desired.Name] = desired
+	}
 
-func (r *RegionalWorkloadReconciler) buildSharedEndpointService(
+	serviceList := &corev1.ServiceList{}
+	if err := r.List(ctx, serviceList,
+		client.InNamespace(workload.Namespace),
+		client.MatchingLabels(map[string]string{"geo.oiviak3s.io/regional-workload": workload.Name}),
+	); err != nil {
+		return err
+	}
+
+	for i := range serviceList.Items {
+		existing := &serviceList.Items[i]
+		desired, exists := desiredByName[existing.Name]
+		if !exists {
+			if err := client.IgnoreNotFound(r.Delete(ctx, existing)); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := r.updateSharedEndpointService(ctx, existing, desired); err != nil {
+			return err
+		}
+		delete(desiredByName, existing.Name)
+	}
+
+	for _, desired := range desiredByName {
+		if err := r.Create(ctx, desired); err != nil && !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *RegionalWorkloadReconciler) buildSharedEndpointServices(
 	ctx context.Context,
 	workload *geov1alpha1.RegionalWorkload,
 	cfg geov1alpha1.SharedEndpointConfig,
-) (*corev1.Service, error) {
+) ([]*corev1.Service, error) {
 	selector, ports, err := r.getWorkloadSelectorAndPorts(ctx, workload)
 	if err != nil {
 		return nil, err
 	}
 
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      sharedEndpointServiceName(workload.Name),
-			Namespace: workload.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/managed-by":      "oiviak3s-operator",
-				"geo.oiviak3s.io/regional-workload": workload.Name,
-			},
-			Annotations: map[string]string{
-				"kube-vip.io/loadbalancerIPs": cfg.IP,
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Type:           corev1.ServiceTypeLoadBalancer,
-			Selector:       selector,
-			Ports:          ports,
-			LoadBalancerIP: cfg.IP,
-		},
-	}
-
-	if err := controllerutil.SetControllerReference(workload, svc, r.Scheme); err != nil {
+	targets, err := normalizeSharedEndpointTargets(cfg)
+	if err != nil {
 		return nil, err
 	}
 
-	return svc, nil
+	services := make([]*corev1.Service, 0, len(targets))
+	for _, target := range targets {
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      sharedEndpointServiceName(workload.Name, target, len(targets) == 1),
+				Namespace: workload.Namespace,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by":      "oiviak3s-operator",
+					"geo.oiviak3s.io/regional-workload": workload.Name,
+					"geo.oiviak3s.io/shared-endpoint":   target.Name,
+				},
+				Annotations: map[string]string{
+					"kube-vip.io/loadbalancerIPs": target.IP,
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:           corev1.ServiceTypeLoadBalancer,
+				Selector:       selector,
+				Ports:          ports,
+				LoadBalancerIP: target.IP,
+			},
+		}
+
+		if err := controllerutil.SetControllerReference(workload, svc, r.Scheme); err != nil {
+			return nil, err
+		}
+
+		services = append(services, svc)
+	}
+
+	return services, nil
 }
 
 func (r *RegionalWorkloadReconciler) updateSharedEndpointService(
@@ -362,21 +461,109 @@ func (r *RegionalWorkloadReconciler) updateSharedEndpointService(
 	return r.Update(ctx, existing)
 }
 
-func (r *RegionalWorkloadReconciler) deleteSharedEndpoint(ctx context.Context, workload *geov1alpha1.RegionalWorkload) error {
-	service := &corev1.Service{}
-	key := types.NamespacedName{Namespace: workload.Namespace, Name: sharedEndpointServiceName(workload.Name)}
-	if err := r.Get(ctx, key, service); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
+func (r *RegionalWorkloadReconciler) deleteSharedEndpointServices(ctx context.Context, workload *geov1alpha1.RegionalWorkload) error {
+	serviceList := &corev1.ServiceList{}
+	if err := r.List(ctx, serviceList,
+		client.InNamespace(workload.Namespace),
+		client.MatchingLabels(map[string]string{"geo.oiviak3s.io/regional-workload": workload.Name}),
+	); err != nil {
 		return err
 	}
 
-	return client.IgnoreNotFound(r.Delete(ctx, service))
+	for i := range serviceList.Items {
+		if err := client.IgnoreNotFound(r.Delete(ctx, &serviceList.Items[i])); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func sharedEndpointServiceName(workloadName string) string {
-	return fmt.Sprintf("%s-shared-endpoint", workloadName)
+func sharedEndpointServiceName(workloadName string, target geov1alpha1.SharedEndpointTarget, singleTarget bool) string {
+	if singleTarget {
+		return fmt.Sprintf("%s-shared-endpoint", workloadName)
+	}
+	return fmt.Sprintf("%s-shared-endpoint-%s", workloadName, sanitizeEndpointName(target.Name))
+}
+
+func sanitizeEndpointName(name string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(name))
+	if trimmed == "" {
+		return "endpoint"
+	}
+
+	var b strings.Builder
+	b.Grow(len(trimmed))
+	lastDash := false
+	for _, r := range trimmed {
+		isAlphaNum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if isAlphaNum {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+
+	result := strings.Trim(b.String(), "-")
+	if result == "" {
+		return "endpoint"
+	}
+	return result
+}
+
+func normalizeSharedEndpointTargets(cfg geov1alpha1.SharedEndpointConfig) ([]geov1alpha1.SharedEndpointTarget, error) {
+	if len(cfg.Endpoints) == 0 {
+		if cfg.IP == "" {
+			return nil, &validationError{field: "sharedEndpoint", message: "enabled shared endpoints require ip or endpoints"}
+		}
+		return []geov1alpha1.SharedEndpointTarget{{Name: "primary", IP: cfg.IP}}, nil
+	}
+
+	targets := make([]geov1alpha1.SharedEndpointTarget, 0, len(cfg.Endpoints))
+	seenNames := make(map[string]struct{}, len(cfg.Endpoints))
+	seenIPs := make(map[string]struct{}, len(cfg.Endpoints))
+	for i, endpoint := range cfg.Endpoints {
+		name := sanitizeEndpointName(endpoint.Name)
+		if endpoint.IP == "" {
+			return nil, &validationError{field: fmt.Sprintf("sharedEndpoint.endpoints[%d].ip", i), message: "must not be empty"}
+		}
+		if _, exists := seenNames[name]; exists {
+			return nil, &validationError{field: fmt.Sprintf("sharedEndpoint.endpoints[%d].name", i), message: fmt.Sprintf("duplicate endpoint name %q", name)}
+		}
+		if _, exists := seenIPs[endpoint.IP]; exists {
+			return nil, &validationError{field: fmt.Sprintf("sharedEndpoint.endpoints[%d].ip", i), message: fmt.Sprintf("duplicate endpoint IP %q", endpoint.IP)}
+		}
+		seenNames[name] = struct{}{}
+		seenIPs[endpoint.IP] = struct{}{}
+		targets = append(targets, geov1alpha1.SharedEndpointTarget{Name: name, IP: endpoint.IP})
+	}
+
+	sort.SliceStable(targets, func(i, j int) bool {
+		return targets[i].Name < targets[j].Name
+	})
+
+	return targets, nil
+}
+
+func (r *RegionalWorkloadReconciler) validateWorkload(workload *geov1alpha1.RegionalWorkload) error {
+	if workload.Spec.WorkloadRef.Kind == "" {
+		return &validationError{field: "workloadRef.kind", message: "must not be empty"}
+	}
+	if workload.Spec.WorkloadRef.Name == "" {
+		return &validationError{field: "workloadRef.name", message: "must not be empty"}
+	}
+
+	cfg := r.resolveSharedEndpointConfig(workload)
+	if !cfg.Enabled {
+		return nil
+	}
+
+	_, err := normalizeSharedEndpointTargets(cfg)
+	return err
 }
 
 // getWorkloadSelectorAndPorts extracts selector and ports from workload target.
