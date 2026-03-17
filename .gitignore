@@ -40,6 +40,11 @@ config/manager/secret.yaml
 *.cer
 credentials.json
 credentials.yaml
+**/secret*.yaml
+**/secret*.yml
+**/*-secret.yaml
+**/*-secret.yml
+**/mariadb-ha-secret.yaml
 
 # Local tooling
 hack/tools/bin
