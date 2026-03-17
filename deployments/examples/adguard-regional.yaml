@@ -12,19 +12,19 @@ spec:
     regionPreference:
     - hanoi
     - cloud
-    
+
     # Accept tertiary tier for emergency fallback
     tierPreference:
     - primary
     - secondary
     - tertiary
-    
+
     # No strict requirements for emergency mode
     requireLabels: {}
-    
+
     # Can even run on pi400 if needed
     avoidNodes: []
-    
+
     # No anti-affinity - just get it running
     antiAffinity: []
 
@@ -34,7 +34,7 @@ spec:
     mode: kube-vip
     ip: 192.168.86.8
     autoFailback: true
-  
+
   failoverConfig:
     enabled: true
     maxFailoverTime: 5m

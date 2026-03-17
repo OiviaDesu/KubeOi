@@ -95,7 +95,11 @@ func (n *notifier) Send(ctx context.Context, event *notification.Event) error {
 	if err != nil {
 		return fmt.Errorf("failed to send discord webhook: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			n.logger.V(1).Info("failed to close discord response body", "error", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("discord webhook returned non-OK status: %d", resp.StatusCode)

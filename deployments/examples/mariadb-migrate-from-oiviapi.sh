@@ -37,6 +37,7 @@ kubectl -n "${NAMESPACE}" get pods -l app.kubernetes.io/name=mariadb-galera > "$
 kubectl -n "${NAMESPACE}" get svc > "${RUN_DIR}/k8s-services.txt"
 
 echo "[2/7] Preflight: source MariaDB quick checks"
+# shellcheck disable=SC2029
 ssh "${SRC_SSH_USER}@${SRC_HOST}" "mysql -u${SRC_DB_ROOT_USER} -p'${SRC_DB_ROOT_PASSWORD}' -e \"SHOW VARIABLES WHERE Variable_name IN ('version','log_bin','binlog_format','gtid_strict_mode','server_id'); SHOW MASTER STATUS;\"" \
   | tee "${RUN_DIR}/source-baseline.txt"
 
@@ -69,6 +70,7 @@ sudo systemctl --no-pager --full status mariadb | sed -n '1,30p'
 EOF
 
 echo "[4/7] Triggering source-side physical backup via SSH"
+# shellcheck disable=SC2029
 ssh "${SRC_SSH_USER}@${SRC_HOST}" "mkdir -p /tmp/mariadb-export-${TS} && mariabackup --backup --target-dir=/tmp/mariadb-export-${TS}/base_backup --user=${SRC_DB_ROOT_USER} --password='${SRC_DB_ROOT_PASSWORD}' && mariabackup --prepare --target-dir=/tmp/mariadb-export-${TS}/base_backup && tar -C /tmp/mariadb-export-${TS} -czf /tmp/mariadb-export-${TS}.tar.gz base_backup"
 
 echo "[5/7] Pulling backup artifact locally"

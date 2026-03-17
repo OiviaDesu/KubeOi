@@ -178,8 +178,11 @@ func setupHealthProvider(client client.Client, cfg *config.Config, logger logr.L
 
 	// Register kubelet health checker
 	kubeletChecker := kubeletcheck.NewChecker(logger)
-	provider.RegisterChecker(kubeletChecker)
-	logger.Info("registered health checker", "checker", "kubelet")
+	if err := provider.RegisterChecker(kubeletChecker); err != nil {
+		logger.Error(err, "failed to register health checker", "checker", "kubelet")
+	} else {
+		logger.Info("registered health checker", "checker", "kubelet")
+	}
 
 	// Register resource health checker
 	resourceChecker := resourcecheck.NewChecker(logger, resourcecheck.Config{
@@ -187,16 +190,22 @@ func setupHealthProvider(client client.Client, cfg *config.Config, logger logr.L
 		MemThresholdPercent:  85.0,
 		DiskThresholdPercent: 85.0,
 	})
-	provider.RegisterChecker(resourceChecker)
-	logger.Info("registered health checker", "checker", "resource")
+	if err := provider.RegisterChecker(resourceChecker); err != nil {
+		logger.Error(err, "failed to register health checker", "checker", "resource")
+	} else {
+		logger.Info("registered health checker", "checker", "resource")
+	}
 
 	// Register network health checker
 	networkChecker := networkcheck.NewChecker(logger, networkcheck.Config{
 		ZerotierInterface: cfg.ZerotierInterface,
 		PingTimeout:       cfg.HealthCheckTimeout,
 	})
-	provider.RegisterChecker(networkChecker)
-	logger.Info("registered health checker", "checker", "network")
+	if err := provider.RegisterChecker(networkChecker); err != nil {
+		logger.Error(err, "failed to register health checker", "checker", "network")
+	} else {
+		logger.Info("registered health checker", "checker", "network")
+	}
 
 	return provider
 }
@@ -210,18 +219,27 @@ func setupPlacementEngine(cfg *config.Config, logger logr.Logger) placement.Engi
 
 	// Register geographic placement strategy with weight 40
 	geoStrategy := strategy.NewGeographic()
-	engine.RegisterStrategy(geoStrategy, 40)
-	logger.Info("registered placement strategy", "strategy", "geographic", "weight", 40)
+	if err := engine.RegisterStrategy(geoStrategy, 40); err != nil {
+		logger.Error(err, "failed to register placement strategy", "strategy", "geographic", "weight", 40)
+	} else {
+		logger.Info("registered placement strategy", "strategy", "geographic", "weight", 40)
+	}
 
 	// Register resource-aware placement strategy with weight 35
 	resourceStrategy := strategy.NewResourceAware()
-	engine.RegisterStrategy(resourceStrategy, 35)
-	logger.Info("registered placement strategy", "strategy", "resource-aware", "weight", 35)
+	if err := engine.RegisterStrategy(resourceStrategy, 35); err != nil {
+		logger.Error(err, "failed to register placement strategy", "strategy", "resource-aware", "weight", 35)
+	} else {
+		logger.Info("registered placement strategy", "strategy", "resource-aware", "weight", 35)
+	}
 
 	// Register tier-based placement strategy with weight 25
 	tierStrategy := strategy.NewTier()
-	engine.RegisterStrategy(tierStrategy, 25)
-	logger.Info("registered placement strategy", "strategy", "tier-based", "weight", 25)
+	if err := engine.RegisterStrategy(tierStrategy, 25); err != nil {
+		logger.Error(err, "failed to register placement strategy", "strategy", "tier-based", "weight", 25)
+	} else {
+		logger.Info("registered placement strategy", "strategy", "tier-based", "weight", 25)
+	}
 
 	return engine
 }
@@ -240,8 +258,11 @@ func setupNotificationManager(cfg *config.Config, logger logr.Logger) notificati
 			ChatID:   cfg.TelegramChatID,
 			Enabled:  cfg.NotificationEnabled,
 		})
-		manager.RegisterNotifier(telegramNotifier)
-		logger.Info("registered notifier", "notifier", "telegram")
+		if err := manager.RegisterNotifier(telegramNotifier); err != nil {
+			logger.Error(err, "failed to register notifier", "notifier", "telegram")
+		} else {
+			logger.Info("registered notifier", "notifier", "telegram")
+		}
 	} else {
 		logger.Info("telegram notifier not configured - skipping")
 	}
@@ -252,8 +273,11 @@ func setupNotificationManager(cfg *config.Config, logger logr.Logger) notificati
 			WebhookURL: cfg.DiscordWebhookURL,
 			Enabled:    cfg.NotificationEnabled,
 		})
-		manager.RegisterNotifier(discordNotifier)
-		logger.Info("registered notifier", "notifier", "discord")
+		if err := manager.RegisterNotifier(discordNotifier); err != nil {
+			logger.Error(err, "failed to register notifier", "notifier", "discord")
+		} else {
+			logger.Info("registered notifier", "notifier", "discord")
+		}
 	} else {
 		logger.Info("discord notifier not configured - skipping")
 	}

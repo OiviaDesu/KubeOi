@@ -103,7 +103,11 @@ func (n *notifier) Send(ctx context.Context, event *notification.Event) error {
 	if err != nil {
 		return fmt.Errorf("failed to send telegram message: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			n.logger.V(1).Info("failed to close telegram response body", "error", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("telegram API returned non-OK status: %d", resp.StatusCode)

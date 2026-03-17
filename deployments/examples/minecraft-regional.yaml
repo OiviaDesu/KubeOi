@@ -12,20 +12,20 @@ spec:
     regionPreference:
     - hanoi
     - cloud
-    
+
     # Avoid resource-constrained nodes
     avoidNodes:
     - pi400  # Not enough resources for Minecraft
-    
+
     # Require primary or secondary tier
     tierPreference:
     - primary
     - secondary
-    
+
     # Need stable power for persistent world data
     requireLabels:
       oiviak3s.io/power-stability: high
-    
+
     # No anti-affinity since it's a single-instance server
     antiAffinity: []
 
@@ -35,7 +35,7 @@ spec:
     mode: kube-vip
     ip: 192.168.86.8
     autoFailback: true
-  
+
   failoverConfig:
     enabled: true
     maxFailoverTime: 10m

@@ -14,18 +14,18 @@ spec:
     regionPreference:
     - hanoi
     - melbourne
-    
+
     # Prioritize stronger nodes; keep tertiary only for emergency
     tierPreference:
     - primary
     - secondary
     - tertiary
-    
+
     requireLabels: {}
-    
+
     avoidNodes:
     - oiviax509fj-master
-    
+
     # Avoid co-locating with same app where possible
     antiAffinity:
     - searxng

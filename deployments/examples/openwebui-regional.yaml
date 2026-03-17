@@ -12,19 +12,19 @@ spec:
     regionPreference:
     - hanoi
     - cloud
-    
+
     # Require primary or secondary tier nodes
     tierPreference:
     - primary
     - secondary
-    
+
     # Must have high power stability
     requireLabels:
       oiviak3s.io/power-stability: high
-    
+
     # Avoid specific nodes with known issues
     avoidNodes: []
-    
+
     # Prefer not to co-locate with another OpenWebUI workload
     antiAffinity:
     - openwebui
@@ -35,7 +35,7 @@ spec:
     mode: kube-vip
     ip: 192.168.86.8
     autoFailback: true
-  
+
   failoverConfig:
     enabled: true
     maxFailoverTime: 5m

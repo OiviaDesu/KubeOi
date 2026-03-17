@@ -134,7 +134,11 @@ func (c *checker) checkReachability(ctx context.Context, ip string) (bool, time.
 		c.logger.V(1).Info("network check failed", "ip", ip, "error", err)
 		return false, 0
 	}
-	defer conn.Close()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			c.logger.V(1).Info("failed to close network connection", "ip", ip, "error", closeErr)
+		}
+	}()
 
 	latency := time.Since(start)
 	return true, latency

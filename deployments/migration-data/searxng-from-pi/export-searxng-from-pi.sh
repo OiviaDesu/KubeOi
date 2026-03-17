@@ -21,11 +21,12 @@ CHECKSUM_PATH="${OUT_DIR}/searxng-from-pi-${TS}.sha256"
 mkdir -p "${STAGE_DIR}"
 
 echo "[1/6] Finding SearXNG container on Pi (${PI_USER}@${PI_HOST})"
-SEARX_CONTAINER="$(ssh "${PI_USER}@${PI_HOST}" "docker ps --format '{{.Names}} {{.Image}}' | awk '/searxng\/searxng/ {print \$1; exit}' || true)"
+SEARX_CONTAINER="$(ssh "${PI_USER}@${PI_HOST}" "docker ps --format '{{.Names}} {{.Image}}' | awk '/searxng\/searxng/ {print \$1; exit}' || true")"
 
 if [[ -n "${SEARX_CONTAINER}" ]]; then
   echo "Found running SearXNG container: ${SEARX_CONTAINER}"
   echo "[2/6] Stopping SearXNG container for consistent copy"
+  # shellcheck disable=SC2029
   ssh "${PI_USER}@${PI_HOST}" "docker stop '${SEARX_CONTAINER}'"
   CONTAINER_STOPPED=1
 else
@@ -36,6 +37,7 @@ fi
 cleanup() {
   if [[ "${CONTAINER_STOPPED}" -eq 1 ]]; then
     echo "[6/6] Restarting SearXNG container on Pi"
+    # shellcheck disable=SC2029
     ssh "${PI_USER}@${PI_HOST}" "docker start '${SEARX_CONTAINER}'" || true
   fi
 }

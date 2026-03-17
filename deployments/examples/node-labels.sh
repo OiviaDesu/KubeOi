@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Example node labels for the Oiviak3s cluster
 # Apply these labels to your nodes using:
 # kubectl label node <node-name> <label-key>=<label-value>

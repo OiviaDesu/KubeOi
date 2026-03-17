@@ -15,7 +15,7 @@ spec:
     nodeUnhealthyDuration: 45s
     workloadUnhealthyDuration: 30s
     regionalOutage: true
-  
+
   strategy:
     # Keep graceful strategy, but tighten timings for quicker recovery
     type: graceful
@@ -26,7 +26,7 @@ spec:
     targetRegionPreference:
     - hanoi
     - melbourne
-  
+
   notificationRule:
     enabled: true
     onNodeHealthChange: true

@@ -1,0 +1,9 @@
+---
+extends: default
+
+rules:
+  document-start: disable
+  line-length: disable
+  indentation: disable
+  new-lines:
+    type: unix
