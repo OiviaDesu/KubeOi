@@ -1,0 +1,207 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudreve
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cloudreve-data
+  namespace: cloudreve
+  annotations:
+    autoscaling.oiviak3s.io/pvc-autogrow: "true"
+    autoscaling.oiviak3s.io/max-size: 2Ti
+    autoscaling.oiviak3s.io/threshold-percent: "75"
+    autoscaling.oiviak3s.io/growth-percent: "50"
+    autoscaling.oiviak3s.io/min-growth: 10Gi
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn-autogrow
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cloudreve-db
+  namespace: cloudreve
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+  storage:
+    size: 20Gi
+    storageClass: longhorn-autogrow
+  bootstrap:
+    initdb:
+      database: cloudreve
+      owner: cloudreve
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudreve-redis
+  namespace: cloudreve
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudreve-redis
+  template:
+    metadata:
+      labels:
+        app: cloudreve-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudreve-redis
+  namespace: cloudreve
+spec:
+  type: ClusterIP
+  selector:
+    app: cloudreve-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudreve
+  namespace: cloudreve
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: cloudreve
+  template:
+    metadata:
+      labels:
+        app: cloudreve
+    spec:
+      containers:
+        - name: cloudreve
+          image: cloudreve/cloudreve:latest
+          ports:
+            - name: http
+              containerPort: 5212
+          env:
+            - name: CR_CONF_Database.Type
+              value: postgres
+            - name: CR_CONF_Database.Host
+              value: cloudreve-db-rw
+            - name: CR_CONF_Database.Port
+              value: "5432"
+            - name: CR_CONF_Database.User
+              valueFrom:
+                secretKeyRef:
+                  name: cloudreve-db-app
+                  key: user
+            - name: CR_CONF_Database.Password
+              valueFrom:
+                secretKeyRef:
+                  name: cloudreve-db-app
+                  key: password
+            - name: CR_CONF_Database.Name
+              valueFrom:
+                secretKeyRef:
+                  name: cloudreve-db-app
+                  key: dbname
+            - name: CR_CONF_Redis.Server
+              value: cloudreve-redis:6379
+          volumeMounts:
+            - name: data
+              mountPath: /cloudreve/data
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5212
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 5212
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: cloudreve-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudreve
+  namespace: cloudreve
+spec:
+  type: ClusterIP
+  selector:
+    app: cloudreve
+  ports:
+    - name: http
+      port: 5212
+      targetPort: 5212
+      protocol: TCP
+---
+apiVersion: geo.oiviak3s.io/v1alpha1
+kind: RegionalWorkload
+metadata:
+  name: cloudreve
+  namespace: cloudreve
+spec:
+  workloadRef:
+    kind: Deployment
+    name: cloudreve
+    namespace: cloudreve
+  placementConstraints:
+    regionPreference:
+      - hanoi
+  sharedEndpoint:
+    enabled: true
+    mode: kube-vip
+    ip: 192.168.86.8
+    autoFailback: true
+  failoverConfig:
+    enabled: true
+    maxFailoverTime: 5m
+    minHealthyReplicas: 1
+    healthCheckGracePeriod: 1m
+  notificationEnabled: true
