@@ -54,6 +54,8 @@ type RegionalWorkloadReconciler struct {
 	DefaultSharedEndpointAutoFailback bool
 }
 
+const disableNodePinningAnnotation = "geo.oiviak3s.io/disable-node-pinning"
+
 type validationError struct {
 	field   string
 	message string
@@ -696,6 +698,21 @@ func (r *RegionalWorkloadReconciler) applyToDeployment(
 		return err
 	}
 
+	if shouldDisableNodePinning(deployment.Annotations) {
+		if deployment.Spec.Template.Spec.NodeSelector == nil {
+			return nil
+		}
+		if _, exists := deployment.Spec.Template.Spec.NodeSelector["kubernetes.io/hostname"]; !exists {
+			return nil
+		}
+
+		delete(deployment.Spec.Template.Spec.NodeSelector, "kubernetes.io/hostname")
+		if len(deployment.Spec.Template.Spec.NodeSelector) == 0 {
+			deployment.Spec.Template.Spec.NodeSelector = nil
+		}
+		return r.Update(ctx, deployment)
+	}
+
 	if deployment.Spec.Template.Spec.NodeSelector == nil {
 		deployment.Spec.Template.Spec.NodeSelector = make(map[string]string)
 	}
@@ -719,6 +736,21 @@ func (r *RegionalWorkloadReconciler) applyToStatefulSet(
 		return err
 	}
 
+	if shouldDisableNodePinning(statefulSet.Annotations) {
+		if statefulSet.Spec.Template.Spec.NodeSelector == nil {
+			return nil
+		}
+		if _, exists := statefulSet.Spec.Template.Spec.NodeSelector["kubernetes.io/hostname"]; !exists {
+			return nil
+		}
+
+		delete(statefulSet.Spec.Template.Spec.NodeSelector, "kubernetes.io/hostname")
+		if len(statefulSet.Spec.Template.Spec.NodeSelector) == 0 {
+			statefulSet.Spec.Template.Spec.NodeSelector = nil
+		}
+		return r.Update(ctx, statefulSet)
+	}
+
 	if statefulSet.Spec.Template.Spec.NodeSelector == nil {
 		statefulSet.Spec.Template.Spec.NodeSelector = make(map[string]string)
 	}
@@ -728,6 +760,18 @@ func (r *RegionalWorkloadReconciler) applyToStatefulSet(
 
 	statefulSet.Spec.Template.Spec.NodeSelector["kubernetes.io/hostname"] = nodeName
 	return r.Update(ctx, statefulSet)
+}
+
+func shouldDisableNodePinning(annotations map[string]string) bool {
+	if annotations == nil {
+		return false
+	}
+	v, ok := annotations[disableNodePinningAnnotation]
+	if !ok {
+		return false
+	}
+	v = strings.TrimSpace(strings.ToLower(v))
+	return v == "true" || v == "1" || v == "yes"
 }
 
 // updateWorkloadHealth updates the workload health status

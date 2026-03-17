@@ -1,0 +1,13 @@
+defaultSettings:
+  createDefaultDiskLabeledNodes: true
+  defaultReplicaCount: 2
+  defaultDataPath: /home/longhorn
+  systemManagedComponentsNodeSelector: ""
+
+global: {}
+
+longhornManager: {}
+
+longhornDriver: {}
+
+longhornUI: {}

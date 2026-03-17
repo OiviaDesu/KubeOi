@@ -1,0 +1,24 @@
+# Template only: apply when KEDA + Prometheus node metrics are available.
+# Scales a target workload based on node free disk percentage.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: immich-node-disk-pressure
+  namespace: immich
+spec:
+  scaleTargetRef:
+    name: immich-server
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 6
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-server.monitoring.svc.cluster.local
+        # Free disk percent across worker nodes. Replace labels to match your metrics.
+        query: min((node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"} / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}) * 100)
+        # Scale out when free disk is low by inverting signal in external metric pipeline.
+        # If your query returns free %, set threshold to a low value and use activationThreshold.
+        threshold: "15"
+        activationThreshold: "20"

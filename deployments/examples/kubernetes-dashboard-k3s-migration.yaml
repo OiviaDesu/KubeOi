@@ -31,6 +31,8 @@ kind: Deployment
 metadata:
   name: kubernetes-dashboard-gateway
   namespace: kubernetes-dashboard
+  annotations:
+    geo.oiviak3s.io/disable-node-pinning: "true"
 spec:
   replicas: 1
   revisionHistoryLimit: 10
@@ -42,6 +44,56 @@ spec:
       labels:
         app: kubernetes-dashboard-gateway
     spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: kubernetes-dashboard-gateway
+        - maxSkew: 1
+          topologyKey: oiviak3s.io/region
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: kubernetes-dashboard-gateway
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: kubernetes-dashboard-gateway
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: oiviak3s.io/power-stability
+                    operator: In
+                    values:
+                      - high
+                  - key: oiviak3s.io/tier
+                    operator: In
+                    values:
+                      - primary
+                      - secondary
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: oiviak3s.io/region
+                    operator: In
+                    values:
+                      - hanoi
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: oiviak3s.io/region
+                    operator: In
+                    values:
+                      - melbourne
       containers:
         - name: haproxy
           image: haproxy:3.1.5-alpine
@@ -65,11 +117,11 @@ spec:
             periodSeconds: 20
           resources:
             requests:
-              cpu: 25m
-              memory: 32Mi
+              cpu: 50m
+              memory: 96Mi
             limits:
               cpu: 250m
-              memory: 128Mi
+              memory: 256Mi
       volumes:
         - name: haproxy-config
           configMap:

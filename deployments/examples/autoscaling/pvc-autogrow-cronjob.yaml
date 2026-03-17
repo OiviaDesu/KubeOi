@@ -1,0 +1,309 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pvc-autogrow
+  namespace: oiviak3s-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pvc-autogrow
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims", "persistentvolumes", "namespaces"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pvc-autogrow
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pvc-autogrow
+subjects:
+  - kind: ServiceAccount
+    name: pvc-autogrow
+    namespace: oiviak3s-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pvc-autogrow-script
+  namespace: oiviak3s-system
+data:
+  pvc_autogrow.py: |
+    import json
+    import math
+    import os
+    import ssl
+    import sys
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    K8S_HOST = os.environ.get("KUBERNETES_SERVICE_HOST")
+    K8S_PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
+    PROM_URL = os.environ.get("PROM_URL", "http://prometheus-server.monitoring.svc.cluster.local")
+    DEFAULT_THRESHOLD = float(os.environ.get("DEFAULT_THRESHOLD_PERCENT", "80"))
+    DEFAULT_GROWTH = float(os.environ.get("DEFAULT_GROWTH_PERCENT", "50"))
+    DEFAULT_HEADROOM = float(os.environ.get("DEFAULT_USAGE_HEADROOM_PERCENT", "20"))
+    DEFAULT_MIN_GROWTH = os.environ.get("DEFAULT_MIN_GROWTH", "1Gi")
+    SKIP_PROVISIONERS = {
+        item.strip()
+        for item in os.environ.get("SKIP_PROVISIONERS", "rancher.io/local-path").split(",")
+        if item.strip()
+    }
+
+    TRUE_VALUES = {"1", "true", "yes", "on"}
+    SUFFIXES = {
+        "Ki": 1024,
+        "Mi": 1024 ** 2,
+        "Gi": 1024 ** 3,
+        "Ti": 1024 ** 4,
+        "Pi": 1024 ** 5,
+        "Ei": 1024 ** 6,
+        "K": 1000,
+        "M": 1000 ** 2,
+        "G": 1000 ** 3,
+        "T": 1000 ** 4,
+        "P": 1000 ** 5,
+        "E": 1000 ** 6,
+    }
+
+    def log(message):
+        print(f"[pvc-autogrow] {message}", flush=True)
+
+    def is_true(value):
+        return str(value).strip().lower() in TRUE_VALUES
+
+    def parse_quantity(value):
+        value = str(value).strip()
+        for suffix in sorted(SUFFIXES, key=len, reverse=True):
+            if value.endswith(suffix):
+                number = float(value[:-len(suffix)])
+                return int(number * SUFFIXES[suffix])
+        return int(float(value))
+
+    def format_quantity(bytes_value):
+        gib = 1024 ** 3
+        mib = 1024 ** 2
+        if bytes_value >= gib:
+            return f"{math.ceil(bytes_value / gib)}Gi"
+        return f"{max(1, math.ceil(bytes_value / mib))}Mi"
+
+    token = open("/var/run/secrets/kubernetes.io/serviceaccount/token", "r", encoding="utf-8").read().strip()
+    ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    ssl_ctx = ssl.create_default_context(cafile=ca_path)
+
+    def k8s_request(path, method="GET", payload=None):
+        url = f"https://{K8S_HOST}:{K8S_PORT}{path}"
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header("Authorization", f"Bearer {token}")
+        req.add_header("Accept", "application/json")
+        if payload is not None:
+            req.add_header("Content-Type", "application/merge-patch+json")
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def prom_query(query):
+        url = f"{PROM_URL.rstrip('/')}/api/v1/query?{urllib.parse.urlencode({'query': query})}"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        if payload.get("status") != "success":
+            raise RuntimeError(f"Prometheus query failed: {payload}")
+        return payload.get("data", {}).get("result", [])
+
+    def metric_value(metric_name, namespace, pvc_name):
+        results = prom_query(
+            f'{metric_name}{{namespace="{namespace}",persistentvolumeclaim="{pvc_name}"}}'
+        )
+        if not results:
+            return None
+        values = []
+        for item in results:
+            try:
+                values.append(float(item["value"][1]))
+            except Exception:
+                pass
+        if not values:
+            return None
+        return max(values)
+
+    def sc_supports_resize(sc):
+        provisioner = sc.get("provisioner", "")
+        if provisioner in SKIP_PROVISIONERS:
+            return False, f"storage class provisioner {provisioner} is configured to be skipped"
+        if sc.get("allowVolumeExpansion") is not True:
+            return False, "allowVolumeExpansion is not enabled"
+        return True, "ok"
+
+    def main():
+        try:
+            pvc_list = k8s_request("/api/v1/persistentvolumeclaims")
+        except Exception as exc:
+            log(f"failed to list PVCs from API server: {exc}")
+            return 1
+
+        sc_cache = {}
+        processed = 0
+        expanded = 0
+        skipped = 0
+
+        for pvc in pvc_list.get("items", []):
+            meta = pvc.get("metadata", {})
+            spec = pvc.get("spec", {})
+            status = pvc.get("status", {})
+            annotations = meta.get("annotations", {}) or {}
+            namespace = meta.get("namespace")
+            name = meta.get("name")
+
+            if not is_true(annotations.get("autoscaling.oiviak3s.io/pvc-autogrow", "false")):
+                continue
+
+            processed += 1
+            storage_class = spec.get("storageClassName")
+            if not storage_class:
+                log(f"skip {namespace}/{name}: no storageClassName")
+                skipped += 1
+                continue
+
+            if status.get("phase") != "Bound":
+                log(f"skip {namespace}/{name}: PVC phase is {status.get('phase')}")
+                skipped += 1
+                continue
+
+            if storage_class not in sc_cache:
+                sc_cache[storage_class] = k8s_request(f"/apis/storage.k8s.io/v1/storageclasses/{storage_class}")
+            sc = sc_cache[storage_class]
+            supported, reason = sc_supports_resize(sc)
+            if not supported:
+                log(f"skip {namespace}/{name}: {reason}")
+                skipped += 1
+                continue
+
+            try:
+                current = parse_quantity(spec["resources"]["requests"]["storage"])
+                max_size = parse_quantity(annotations["autoscaling.oiviak3s.io/max-size"])
+                threshold = float(annotations.get("autoscaling.oiviak3s.io/threshold-percent", DEFAULT_THRESHOLD))
+                growth = float(annotations.get("autoscaling.oiviak3s.io/growth-percent", DEFAULT_GROWTH))
+                headroom = float(annotations.get("autoscaling.oiviak3s.io/usage-headroom-percent", DEFAULT_HEADROOM))
+                min_growth = parse_quantity(annotations.get("autoscaling.oiviak3s.io/min-growth", DEFAULT_MIN_GROWTH))
+            except KeyError as exc:
+                log(f"skip {namespace}/{name}: missing required annotation {exc}")
+                skipped += 1
+                continue
+            except Exception as exc:
+                log(f"skip {namespace}/{name}: invalid sizing annotations ({exc})")
+                skipped += 1
+                continue
+
+            used = metric_value("kubelet_volume_stats_used_bytes", namespace, name)
+            capacity = metric_value("kubelet_volume_stats_capacity_bytes", namespace, name)
+            if used is None or capacity is None or capacity <= 0:
+                log(f"skip {namespace}/{name}: missing kubelet_volume_stats metrics")
+                skipped += 1
+                continue
+
+            usage_pct = (used / capacity) * 100.0
+            if usage_pct < threshold:
+                log(f"hold {namespace}/{name}: usage {usage_pct:.1f}% < threshold {threshold:.1f}%")
+                continue
+
+            target = max(
+                int(current * (1.0 + growth / 100.0)),
+                int(used * (1.0 + headroom / 100.0)),
+                current + min_growth,
+            )
+            if target > max_size:
+                target = max_size
+
+            if target <= current:
+                log(f"hold {namespace}/{name}: at max size {format_quantity(current)}")
+                continue
+
+            new_size = format_quantity(target)
+            try:
+                k8s_request(
+                    f"/api/v1/namespaces/{namespace}/persistentvolumeclaims/{name}",
+                    method="PATCH",
+                    payload={"spec": {"resources": {"requests": {"storage": new_size}}}},
+                )
+                expanded += 1
+                log(
+                    f"expanded {namespace}/{name}: {format_quantity(current)} -> {new_size} "
+                    f"(usage {usage_pct:.1f}% of {format_quantity(int(capacity))})"
+                )
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                log(f"failed to patch {namespace}/{name}: HTTP {exc.code} {body}")
+            except Exception as exc:
+                log(f"failed to patch {namespace}/{name}: {exc}")
+
+        log(f"summary: processed={processed} expanded={expanded} skipped={skipped}")
+        return 0
+
+    sys.exit(main())
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pvc-autogrow
+  namespace: oiviak3s-system
+spec:
+  schedule: "*/10 * * * *"
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: pvc-autogrow
+          restartPolicy: Never
+          nodeSelector:
+            kubernetes.io/hostname: oiviax509fj-master
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+          containers:
+            - name: pvc-autogrow
+              image: python:3.11-slim
+              imagePullPolicy: IfNotPresent
+              command: ["python", "/app/pvc_autogrow.py"]
+              env:
+                - name: PROM_URL
+                  value: http://prometheus-server.monitoring.svc.cluster.local
+                - name: DEFAULT_THRESHOLD_PERCENT
+                  value: "80"
+                - name: DEFAULT_GROWTH_PERCENT
+                  value: "50"
+                - name: DEFAULT_USAGE_HEADROOM_PERCENT
+                  value: "20"
+                - name: DEFAULT_MIN_GROWTH
+                  value: 1Gi
+                - name: SKIP_PROVISIONERS
+                  value: rancher.io/local-path
+              volumeMounts:
+                - name: script
+                  mountPath: /app
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
+          volumes:
+            - name: script
+              configMap:
+                name: pvc-autogrow-script
+                defaultMode: 0555

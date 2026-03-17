@@ -170,6 +170,99 @@ spec:
 
 See `deployments/examples/` for more examples.
 
+### Autoscaling (auto scale up/down)
+
+The repository now includes an autoscaling pack under `deployments/examples/autoscaling/`:
+
+- `hpa-immich-server.yaml`
+- `hpa-worldlinkd.yaml`
+- `hpa-kubernetes-dashboard-gateway.yaml`
+- `keda-scaledobject-qps-template.yaml`
+- `keda-scaledobject-queue-template.yaml`
+- `keda-scaledobject-node-disk-template.yaml`
+- `apply-autoscaling.sh`
+
+Apply autoscaling baseline (CPU/RAM, auto up/down):
+
+```bash
+bash deployments/examples/autoscaling/apply-autoscaling.sh
+```
+
+Optional KEDA trigger templates (QPS/queue/disk):
+
+```bash
+# Enable template apply only after you have real metric backends configured
+ENABLE_KEDA_TEMPLATES=true \
+PROM_NAMESPACE=monitoring \
+PROM_SERVICE=prometheus-server \
+QUEUE_KEY=your_real_queue_key \
+bash deployments/examples/autoscaling/apply-autoscaling.sh
+```
+
+Safety guard:
+
+- The helper detects existing native HPAs on the same deployment target and skips KEDA ScaledObject apply for that target to avoid multi-HPA selector conflicts.
+
+Important scope note:
+
+- Pod instance autoscaling is fully automated with HPA/KEDA (scale up and down).
+- This cluster is currently bare-metal k3s. Automatic scaling of **physical server count** needs an external infrastructure API (for example MAAS/Cluster API/Talos automation). Without that API, Kubernetes can autoscale pods, but cannot magically provision new physical nodes by itself.
+
+### MariaDB HA on k3s (Galera) + Full Migration from external host
+
+The repository now includes a starter set for MariaDB HA deployment and full-fidelity migration from an external MariaDB source (current source host: `192.168.86.40`).
+
+Artifacts:
+
+- `deployments/examples/mariadb-ha-secret.yaml.example`
+- `deployments/examples/mariadb-ha-values.yaml`
+- `deployments/examples/mariadb-ha-deploy.sh`
+- `deployments/examples/mariadb-migrate-from-oiviapi.sh`
+- `deployments/migration-data/mariadb-from-oiviapi/README.md`
+
+Deploy HA cluster:
+
+```bash
+cp deployments/examples/mariadb-ha-secret.yaml.example deployments/examples/mariadb-ha-secret.yaml
+# edit secret values
+bash deployments/examples/mariadb-ha-deploy.sh
+```
+
+Source-host preparation (requires `sudo` on `192.168.86.40`):
+
+```bash
+# Arch
+sudo pacman -Sy --noconfirm mariadb-backup
+
+# Ubuntu/Debian
+sudo apt-get update && sudo apt-get install -y mariadb-backup
+
+sudo mkdir -p /etc/my.cnf.d
+sudo tee /etc/my.cnf.d/99-replication.cnf >/dev/null <<'CNF'
+[mysqld]
+server_id=40
+log_bin=mysql-bin
+binlog_format=ROW
+binlog_row_image=FULL
+sync_binlog=1
+expire_logs_days=7
+innodb_flush_log_at_trx_commit=1
+gtid_strict_mode=ON
+log_slave_updates=ON
+CNF
+sudo systemctl restart mariadb
+sudo systemctl --no-pager --full status mariadb | sed -n '1,30p'
+```
+
+Run migration helper:
+
+```bash
+SRC_DB_ROOT_PASSWORD='<root_password>' \
+bash deployments/examples/mariadb-migrate-from-oiviapi.sh
+```
+
+The helper performs source/target preflight, creates a physical backup artifact with checksum, and prints the next restore/cutover commands.
+
 ### Kubernetes Dashboard Integration
 
 The repository now includes a repo-managed Kubernetes Dashboard stack under `deployments/dashboard/` and an Oiviak3s public entrypoint example under `deployments/examples/kubernetes-dashboard-k3s-migration.yaml`.
@@ -239,7 +332,7 @@ For the currently documented routed node set:
 - `x509fj=192.168.86.8`
 - `macmini=192.168.86.41`
 - `pi=192.168.86.40`
-- `server67=192.168.86.15` (Hanoi, not yet ready for placement/failover)
+- `server67=192.168.86.15`
 
 Do not document or deploy a Dashboard address outside that routed set unless you have explicitly provisioned an additional VIP on your network.
 

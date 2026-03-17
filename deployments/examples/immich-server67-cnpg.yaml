@@ -9,12 +9,13 @@ spec:
   imageName: ghcr.io/tensorchord/cloudnative-vectorchord:16.9-0.4.3
 
   storage:
-    size: 50Gi
+    size: 20Gi
+    storageClass: longhorn-autogrow
 
-  # Pin database instance to server67
+  # Pin database instance to stable storage node
   affinity:
     nodeSelector:
-      kubernetes.io/hostname: server67
+      kubernetes.io/hostname: oiviax509fj-master
 
   postgresql:
     shared_preload_libraries:

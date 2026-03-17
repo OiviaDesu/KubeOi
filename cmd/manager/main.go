@@ -76,10 +76,13 @@ func main() {
 	// Load configuration from environment
 	setupLog.Info("loading configuration from environment")
 	loader := config.NewLoader()
-	cfg, err := loader.Load()
+	cfg, warnings, err := loader.Load()
 	if err != nil {
 		setupLog.Error(err, "unable to load configuration")
 		os.Exit(1)
+	}
+	for _, warning := range warnings {
+		setupLog.Info("configuration warning", "warning", warning)
 	}
 
 	setupLog.Info("configuration loaded",

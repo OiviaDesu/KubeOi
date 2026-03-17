@@ -33,8 +33,9 @@ func NewLoader() *Loader {
 }
 
 // Load reads configuration from environment variables
-func (l *Loader) Load() (*Config, error) {
+func (l *Loader) Load() (*Config, []string, error) {
 	cfg := &Config{}
+	warnings := make([]string, 0)
 
 	// Load string values
 	cfg.ClusterRegionHanoi = getEnvOrDefault("CLUSTER_REGION_HANOI", "hanoi")
@@ -60,27 +61,40 @@ func (l *Loader) Load() (*Config, error) {
 	var err error
 	cfg.HealthCheckInterval, err = parseDuration("HEALTH_CHECK_INTERVAL", "30s")
 	if err != nil {
-		return nil, err
+		return nil, warnings, err
 	}
 
 	cfg.HealthCheckTimeout, err = parseDuration("HEALTH_CHECK_TIMEOUT", "10s")
 	if err != nil {
-		return nil, err
+		return nil, warnings, err
 	}
 
 	// Load integer values
 	cfg.FailoverThreshold, err = parseInt("FAILOVER_THRESHOLD", 3)
 	if err != nil {
-		return nil, err
+		return nil, warnings, err
 	}
 
 	// Load boolean values
-	cfg.NotificationEnabled = parseBool("NOTIFICATION_ENABLED", true)
-	cfg.SharedEndpointEnabled = parseBool("SHARED_ENDPOINT_ENABLED", true)
-	cfg.SharedEndpointAutoFailback = parseBool("SHARED_ENDPOINT_AUTO_FAILBACK", true)
-	cfg.LeaderElect = parseBool("LEADER_ELECT", true)
+	var warn string
+	cfg.NotificationEnabled, warn = parseBoolWithWarning("NOTIFICATION_ENABLED", true)
+	if warn != "" {
+		warnings = append(warnings, warn)
+	}
+	cfg.SharedEndpointEnabled, warn = parseBoolWithWarning("SHARED_ENDPOINT_ENABLED", true)
+	if warn != "" {
+		warnings = append(warnings, warn)
+	}
+	cfg.SharedEndpointAutoFailback, warn = parseBoolWithWarning("SHARED_ENDPOINT_AUTO_FAILBACK", true)
+	if warn != "" {
+		warnings = append(warnings, warn)
+	}
+	cfg.LeaderElect, warn = parseBoolWithWarning("LEADER_ELECT", true)
+	if warn != "" {
+		warnings = append(warnings, warn)
+	}
 
-	return cfg, nil
+	return cfg, warnings, nil
 }
 
 // getEnvOrDefault returns environment variable value or default
@@ -116,10 +130,10 @@ func parseInt(key string, defaultValue int) (int, error) {
 }
 
 // parseBool parses a boolean from environment or returns default
-func parseBool(key string, defaultValue bool) bool {
+func parseBoolWithWarning(key string, defaultValue bool) (bool, string) {
 	val := os.Getenv(key)
 	if val == "" {
-		return defaultValue
+		return defaultValue, ""
 	}
 
 	boolVal, err := strconv.ParseBool(val)
@@ -127,12 +141,12 @@ func parseBool(key string, defaultValue bool) bool {
 		// Try case-insensitive string matching
 		switch strings.ToLower(val) {
 		case "true", "yes", "1":
-			return true
+			return true, ""
 		case "false", "no", "0":
-			return false
+			return false, ""
 		default:
-			return defaultValue
+			return defaultValue, fmt.Sprintf("invalid boolean for %s=%q; using default %t", key, val, defaultValue)
 		}
 	}
-	return boolVal
+	return boolVal, ""
 }

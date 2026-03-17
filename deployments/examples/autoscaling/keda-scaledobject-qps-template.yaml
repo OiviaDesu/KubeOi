@@ -1,0 +1,27 @@
+# Template only: apply when KEDA + Prometheus are available.
+# This autoscaler uses QPS (request rate) from Prometheus.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worldlinkd-qps
+  namespace: worldlinkd
+spec:
+  scaleTargetRef:
+    name: worldlinkd
+  pollingInterval: 15
+  cooldownPeriod: 180
+  minReplicaCount: 2
+  maxReplicaCount: 12
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-server.monitoring.svc.cluster.local
+        # QPS-like proxy metric from cAdvisor packet rate for worldlinkd pods.
+        # Replace with your real HTTP request metric when available.
+        query: sum(rate(container_network_receive_packets_total{namespace="worldlinkd",pod=~"worldlinkd-.*"}[1m]))
+        threshold: "300"

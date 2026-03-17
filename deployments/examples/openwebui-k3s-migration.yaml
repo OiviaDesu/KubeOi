@@ -9,13 +9,19 @@ kind: PersistentVolumeClaim
 metadata:
   name: openwebui-data
   namespace: openwebui
+  annotations:
+    autoscaling.oiviak3s.io/pvc-autogrow: "true"
+    autoscaling.oiviak3s.io/max-size: 50Gi
+    autoscaling.oiviak3s.io/threshold-percent: "80"
+    autoscaling.oiviak3s.io/growth-percent: "50"
+    autoscaling.oiviak3s.io/min-growth: 2Gi
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: local-path
+  storageClassName: longhorn-autogrow
   resources:
     requests:
-      storage: 512Mi
+      storage: 2Gi
 ---
 apiVersion: apps/v1
 kind: Deployment

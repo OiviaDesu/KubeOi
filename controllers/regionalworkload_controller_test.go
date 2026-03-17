@@ -121,3 +121,31 @@ func TestBuildSharedEndpointServicesMirrorsPortsAcrossEndpoints(t *testing.T) {
 		}
 	}
 }
+
+func TestShouldDisableNodePinning(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expected    bool
+	}{
+		{name: "nil annotations", annotations: nil, expected: false},
+		{name: "annotation missing", annotations: map[string]string{"foo": "bar"}, expected: false},
+		{name: "explicit true", annotations: map[string]string{disableNodePinningAnnotation: "true"}, expected: true},
+		{name: "uppercase true", annotations: map[string]string{disableNodePinningAnnotation: "TRUE"}, expected: true},
+		{name: "numeric true", annotations: map[string]string{disableNodePinningAnnotation: "1"}, expected: true},
+		{name: "yes true", annotations: map[string]string{disableNodePinningAnnotation: "yes"}, expected: true},
+		{name: "explicit false", annotations: map[string]string{disableNodePinningAnnotation: "false"}, expected: false},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shouldDisableNodePinning(tc.annotations); got != tc.expected {
+				t.Fatalf("expected %v, got %v", tc.expected, got)
+			}
+		})
+	}
+}

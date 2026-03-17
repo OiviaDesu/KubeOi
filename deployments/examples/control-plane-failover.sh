@@ -21,11 +21,11 @@ set -euo pipefail
 #
 # Optional env overrides:
 #   PRIMARY_HOST=192.168.86.8
-#   MAC_HOST=192.168.86.9
+#   MAC_HOST=192.168.86.41
 #   PI_HOST=192.168.86.40
 #   SSH_USER=oiviadesu
 #   K3S_TOKEN='...'
-#   PREFER_HOSTS='mac pi'
+#   PREFER_HOSTS='macmini pi'
 #
 # Simulation mode (for dry testing without touching hosts):
 #   SIMULATE=1 PRIMARY_UP=0 MAC_UP=1 PI_UP=1 \
@@ -49,11 +49,11 @@ fi
 
 SSH_USER="${SSH_USER:-oiviadesu}"
 PRIMARY_HOST="${PRIMARY_HOST:-${x509fj:-oiviax509fj-master}}"
-MAC_HOST="${MAC_HOST:-${mac:-oiviamacmini-worker}}"
+MAC_HOST="${MAC_HOST:-${macmini:-${mac:-oiviamacmini-worker}}}"
 PI_HOST="${PI_HOST:-${pi:-oiviapi-worker}}"
 
 # Preference order for standby promotion
-PREFER_HOSTS="${PREFER_HOSTS:-mac pi}"
+PREFER_HOSTS="${PREFER_HOSTS:-macmini pi}"
 
 # Optional static token (if empty, script reads from active server over SSH)
 K3S_TOKEN="${K3S_TOKEN:-}"
@@ -112,7 +112,7 @@ get_ip() {
   if [[ "$SIMULATE" == "1" ]]; then
     case "$host" in
       "$PRIMARY_HOST") echo "192.168.86.8" ;;
-      "$MAC_HOST") echo "192.168.86.9" ;;
+      "$MAC_HOST") echo "192.168.86.41" ;;
       "$PI_HOST") echo "192.168.86.40" ;;
       *) echo "127.0.0.1" ;;
     esac
@@ -166,7 +166,7 @@ demote_host_to_agent() {
 select_standby_host() {
   for id in ${PREFER_HOSTS}; do
     case "$id" in
-      mac)
+      mac|macmini)
         if host_up "$MAC_HOST"; then
           echo "$MAC_HOST"
           return 0

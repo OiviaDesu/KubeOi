@@ -3,9 +3,16 @@ kind: PersistentVolumeClaim
 metadata:
   name: immich-library-pvc
   namespace: immich
+  annotations:
+    autoscaling.oiviak3s.io/pvc-autogrow: "true"
+    autoscaling.oiviak3s.io/max-size: 2Ti
+    autoscaling.oiviak3s.io/threshold-percent: "80"
+    autoscaling.oiviak3s.io/growth-percent: "25"
+    autoscaling.oiviak3s.io/min-growth: 20Gi
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: longhorn-autogrow
   resources:
     requests:
-      storage: 300Gi
+      storage: 20Gi

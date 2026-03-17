@@ -1,0 +1,80 @@
+# Bitnami MariaDB Galera values for Oiviak3s
+# Chart: bitnami/mariadb-galera
+
+fullnameOverride: mariadb-ha
+namespaceOverride: mariadb
+
+replicaCount: 2
+
+image:
+  registry: docker.io
+  repository: bitnamilegacy/mariadb-galera
+  tag: 12.0.2-debian-12-r0
+  debug: false
+
+# Use existing secret created from mariadb-ha-secret.yaml
+existingSecret: mariadb-ha-secret
+rootUser:
+  password: ""
+
+db:
+  user: app
+  name: appdb
+  password: ""
+
+galera:
+  name: oiviak3s-galera
+  mariabackup:
+    password: ""
+
+persistence:
+  enabled: true
+  size: 3Gi
+  storageClass: longhorn-autogrow
+
+service:
+  type: ClusterIP
+
+headless:
+  annotations: {}
+
+podDisruptionBudget:
+  create: true
+  minAvailable: 1
+
+metrics:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2
+    memory: 4Gi
+
+podAntiAffinityPreset: hard
+
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: oiviak3s.io/region
+              operator: In
+              values:
+                - hanoi
+      - weight: 50
+        preference:
+          matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: NotIn
+              values:
+                - server67
+                - oiviapi-worker
+
+tolerations: []
+
+# Optional backup tuning hooks for large datasets
+extraFlags: "--wsrep_slave_threads=4"

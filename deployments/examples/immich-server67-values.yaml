@@ -5,23 +5,30 @@ controllers:
         image:
           tag: v2.0.0
         env:
-          REDIS_HOSTNAME: 10.43.39.173
-          IMMICH_MACHINE_LEARNING_URL: http://10.43.94.152:3003
+          REDIS_HOSTNAME: immich-valkey
+          IMMICH_MACHINE_LEARNING_URL: http://immich-machine-learning:3003
 
 # Force all Immich components onto server67
 # (supported by bjw-s common library used by this chart)
 defaultPodOptions:
   nodeSelector:
-    kubernetes.io/hostname: server67
+    kubernetes.io/hostname: oiviax509fj-master
 
 server:
   controllers:
     main:
       containers:
         main:
+          resources:
+            requests:
+              cpu: 300m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
           env:
             DB_HOSTNAME:
-              value: 10.43.115.110
+              value: immich-database-rw
             DB_USERNAME:
               valueFrom:
                 secretKeyRef:

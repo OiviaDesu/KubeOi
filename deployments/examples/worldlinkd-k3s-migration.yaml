@@ -9,6 +9,8 @@ kind: Deployment
 metadata:
   name: worldlinkd
   namespace: worldlinkd
+  annotations:
+    geo.oiviak3s.io/disable-node-pinning: "true"
 spec:
   replicas: 2
   minReadySeconds: 5
@@ -27,28 +29,46 @@ spec:
     spec:
       topologySpreadConstraints:
         - maxSkew: 1
-          topologyKey: location
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: worldlinkd
+        - maxSkew: 1
+          topologyKey: oiviak3s.io/region
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app: worldlinkd
       affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: worldlinkd
+                topologyKey: kubernetes.io/hostname
         nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+                  - key: oiviak3s.io/power-stability
+                    operator: In
+                    values:
+                      - high
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
               preference:
                 matchExpressions:
-                  - key: location
+                  - key: oiviak3s.io/region
                     operator: In
                     values:
-                      - Hanoi
-            - weight: 50
-              preference:
-                matchExpressions:
-                  - key: location
-                    operator: In
-                    values:
-                      - Melbourne
+                      - hanoi
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
@@ -89,7 +109,7 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 500m
               memory: 512Mi
@@ -130,9 +150,9 @@ spec:
     regionPreference:
       - hanoi
       - melbourne
-    requireLabels: {}
-    avoidNodes:
-      - oiviapi-worker
+    requireLabels:
+      oiviak3s.io/power-stability: high
+    avoidNodes: []
     antiAffinity: []
   failoverConfig:
     enabled: true

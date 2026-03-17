@@ -9,13 +9,19 @@ kind: PersistentVolumeClaim
 metadata:
   name: minecraft-data
   namespace: minecraft
+  annotations:
+    autoscaling.oiviak3s.io/pvc-autogrow: "true"
+    autoscaling.oiviak3s.io/max-size: 100Gi
+    autoscaling.oiviak3s.io/threshold-percent: "75"
+    autoscaling.oiviak3s.io/growth-percent: "50"
+    autoscaling.oiviak3s.io/min-growth: 5Gi
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: local-path
+  storageClassName: longhorn-autogrow
   resources:
     requests:
-      storage: 2Gi
+      storage: 5Gi
 ---
 apiVersion: apps/v1
 kind: Deployment

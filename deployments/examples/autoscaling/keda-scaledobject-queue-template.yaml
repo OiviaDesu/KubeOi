@@ -1,0 +1,21 @@
+# Template only: apply when KEDA + Redis queue key are available.
+# This autoscaler scales on queue depth.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: immich-queue-depth
+  namespace: immich
+spec:
+  scaleTargetRef:
+    name: immich-server
+  pollingInterval: 10
+  cooldownPeriod: 180
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+    - type: redis
+      metadata:
+        address: immich-valkey.immich.svc.cluster.local:6379
+        # IMPORTANT: set queue key that your app really uses.
+        listName: "CHANGE_ME_QUEUE_KEY"
+        listLength: "100"
